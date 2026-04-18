@@ -181,7 +181,10 @@
   </div>
   <div id="threejs-panel">
     <span class="panel-label">3D Model</span>
+    <button id="ar-view-btn" style="display:none;position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;" onclick="launchMarkerAR()">AR View</button>
   </div>
+  <!-- AR overlay (marker-based, works on desktop with webcam) -->
+  <div id="ar-overlay" style="display:none;position:fixed;inset:0;z-index:9999;"></div>
   <div id="info-panel">
     <div id="structures-list">
       <h3>Detected Structures</h3>
@@ -263,6 +266,9 @@
       // 5. Populate structures list
       renderStructures(structuresData.structures);
 
+      // 6. Show AR button
+      document.getElementById('ar-view-btn').style.display = 'block';
+
     } catch (err) {
       statusEl.textContent = `Error: ${err.message}`;
       console.error(err);
@@ -309,17 +315,26 @@
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.xr.enabled = true;
     container.appendChild(renderer.domElement);
 
-    // AR button (only appears if WebXR is supported)
-    const arBtn = ARButton.createButton(renderer, {
-      requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay'],
-      domOverlay: { root: document.body },
-    });
-    arBtn.style.cssText = 'position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;';
-    container.appendChild(arBtn);
+    // AR setup (only on supported devices, fails gracefully on PC)
+    let arSupported = false;
+    try {
+      if (navigator.xr) {
+        arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+      }
+    } catch (e) { /* no XR */ }
+
+    if (arSupported) {
+      renderer.xr.enabled = true;
+      const arBtn = ARButton.createButton(renderer, {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay'],
+        domOverlay: { root: document.body },
+      });
+      arBtn.style.cssText = 'position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;';
+      container.appendChild(arBtn);
+    }
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -533,6 +548,106 @@
       textDiv.textContent = `Error generating report: ${err.message}`;
     }
     btn.disabled = false;
+  };
+
+  // --- Marker-based AR (works on desktop with webcam) ---
+  window.launchMarkerAR = function() {
+    if (!currentScanId) return;
+
+    const overlay = document.getElementById('ar-overlay');
+    overlay.style.display = 'block';
+    overlay.innerHTML = '<div style="position:absolute;top:16px;right:16px;z-index:10000;"><button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:1rem;">Close AR</button></div><div style="position:absolute;bottom:16px;left:16px;z-index:10000;color:white;font-size:0.8rem;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;">Point camera at a Hiro marker. Print from: <a href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" target="_blank" style="color:#4af;">here</a></div>';
+
+    // Load A-Frame + AR.js
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    (async () => {
+      if (!window.AFRAME) await loadScript('https://aframe.io/releases/1.3.0/aframe.min.js');
+      if (!window.THREEx) await loadScript('https://raw.githack.com/AR-js-org/AR.js/dev/aframe/build/aframe-ar.js');
+
+      const scene = document.createElement('a-scene');
+      scene.setAttribute('embedded', '');
+      scene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false;');
+      scene.setAttribute('vr-mode-ui', 'enabled: false');
+      scene.style.position = 'absolute';
+      scene.style.inset = '0';
+
+      const marker = document.createElement('a-marker');
+      marker.setAttribute('preset', 'hiro');
+      scene.appendChild(marker);
+
+      // Load the GLB mesh into the marker
+      const meshEntity = document.createElement('a-entity');
+      meshEntity.setAttribute('position', '0 0 0');
+      meshEntity.setAttribute('scale', '0.1 0.1 0.1');
+      marker.appendChild(meshEntity);
+
+      const cam = document.createElement('a-entity');
+      cam.setAttribute('camera', '');
+      scene.appendChild(cam);
+
+      overlay.appendChild(scene);
+
+      // Wait for scene to initialize, then load our GLB
+      setTimeout(() => {
+        const THREE = window.THREE;
+        const GLTFLoader = window.GLTFLoader;
+        if (!GLTFLoader) return;
+
+        const loader = new GLTFLoader();
+        loader.load(`${BACKEND}/mesh/${currentScanId}`, (gltf) => {
+          const model = gltf.scene;
+
+          // Center
+          const box3 = new THREE.Box3().setFromObject(model);
+          const center = box3.getCenter(new THREE.Vector3());
+          model.position.sub(center);
+
+          // Scale to fit on marker
+          const size = box3.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          if (maxDim > 0) model.scale.multiplyScalar(2.0 / maxDim);
+
+          model.traverse(child => {
+            if (child.isMesh) {
+              child.material.transparent = true;
+              child.material.opacity = 0.8;
+              child.material.side = THREE.DoubleSide;
+            }
+          });
+
+          meshEntity.setObject3D('mesh', model);
+        });
+      }, 500);
+
+      // Scale controls
+      let arScale = 0.1;
+      window._arScaleHandler = (e) => {
+        if (e.key === '+' || e.key === '=') arScale *= 1.2;
+        else if (e.key === '-') arScale /= 1.2;
+        else return;
+        meshEntity.setAttribute('scale', `${arScale} ${arScale} ${arScale}`);
+      };
+      window.addEventListener('keydown', window._arScaleHandler);
+    })();
+  };
+
+  window.closeMarkerAR = function() {
+    const overlay = document.getElementById('ar-overlay');
+    // Remove A-Frame scene
+    const arScene = overlay.querySelector('a-scene');
+    if (arScene) arScene.parentNode.removeChild(arScene);
+    overlay.style.display = 'none';
+    overlay.innerHTML = '';
+    if (window._arScaleHandler) {
+      window.removeEventListener('keydown', window._arScaleHandler);
+    }
   };
 </script>
 </body>
