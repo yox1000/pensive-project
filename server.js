@@ -35,7 +35,8 @@ app.post('/api/segment/demo', upload.single('file'), async (req, res) => {
     const footer = `\r\n--${boundary}--\r\n`;
     const body = Buffer.concat([Buffer.from(header), req.file.buffer, Buffer.from(footer)]);
 
-    const response = await fetch(`${SEG_API_DIRECT}/segment/demo`, {
+    const mode = req.query.mode || 'brain';
+    const response = await fetch(`${SEG_API_DIRECT}/segment/demo?mode=${mode}`, {
       method: 'POST',
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
       body,
