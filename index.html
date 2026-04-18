@@ -281,8 +281,8 @@
     });
     await nv.attachToCanvas(document.getElementById('gl'));
     await nv.loadVolumes([
-      { url: `${BACKEND}/scan/${scanId}`, name: 'scan', colormap: 'gray' },
-      { url: `${BACKEND}/segmentation/${scanId}`, name: 'seg', colormap: 'actc', opacity: 0.4 },
+      { url: `${BACKEND}/scan/${scanId}`, name: 'scan.nii.gz', colormap: 'gray' },
+      { url: `${BACKEND}/segmentation/${scanId}`, name: 'seg.nii.gz', colormap: 'actc', opacity: 0.4 },
     ]);
     nv.setSliceType(nv.sliceTypeMultiplanar);
   }
