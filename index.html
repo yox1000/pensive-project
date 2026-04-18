@@ -191,6 +191,7 @@
   <div id="threejs-panel">
     <span class="panel-label">3D Model</span>
     <button id="ar-view-btn" style="display:none;position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;" onclick="launchMarkerAR()">AR View</button>
+    <button id="toggle-deep-btn" style="display:none;position:absolute;bottom:16px;left:12px;z-index:100;padding:6px 12px;background:rgba(180,80,255,0.15);border:1px solid rgba(180,80,255,0.4);color:rgba(220,180,255,0.9);border-radius:8px;font-size:0.7rem;cursor:pointer;" onclick="toggleDeepStructures()">Hide Deep</button>
   </div>
   <!-- AR overlay -->
   <div id="ar-overlay" style="display:none;position:fixed;inset:0;z-index:9999;"></div>
@@ -305,6 +306,7 @@
 
       // 6. Show AR button
       document.getElementById('ar-view-btn').style.display = 'block';
+      document.getElementById('toggle-deep-btn').style.display = 'block';
 
     } catch (err) {
       statusEl.textContent = `Error: ${err.message}`;
@@ -456,6 +458,9 @@
           child.material.side = THREE.DoubleSide;
         }
       });
+
+      // Rotate brain 90 degrees so it faces forward (nose toward camera)
+      model.rotation.x = -Math.PI / 2;
 
       scene.add(model);
       window._medlensModel = model;
@@ -893,6 +898,26 @@
       }).catch(e => { console.error('[K2] Unknown struct error:', e); insight.textContent = matched; });
     }
   }
+
+  // Toggle deep brain structures visibility
+  let deepVisible = true;
+  const deepNames = ['thalamus', 'deep_gray', 'ventricles', 'brainstem', 'medulla', 'cerebellum'];
+  window.toggleDeepStructures = function() {
+    deepVisible = !deepVisible;
+    const btn = document.getElementById('toggle-deep-btn');
+    btn.textContent = deepVisible ? 'Hide Deep' : 'Show Deep';
+    btn.style.background = deepVisible ? 'rgba(180,80,255,0.15)' : 'rgba(80,255,180,0.15)';
+    btn.style.borderColor = deepVisible ? 'rgba(180,80,255,0.4)' : 'rgba(80,255,180,0.4)';
+    if (window._medlensModel) {
+      window._medlensModel.traverse(child => {
+        if (child.isMesh) {
+          const n = (child.name || '').toLowerCase();
+          const isDeep = deepNames.some(d => n.includes(d));
+          if (isDeep) child.visible = deepVisible;
+        }
+      });
+    }
+  };
 
   window.closeOrganPopup = function() {
     document.getElementById('organ-panel').style.display = 'none';
