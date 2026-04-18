@@ -191,6 +191,14 @@
   <div id="threejs-panel">
     <span class="panel-label">3D Model</span>
     <button id="ar-view-btn" style="display:none;position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;" onclick="launchMarkerAR()">AR View</button>
+    <div id="structure-detail-panel" style="display:none;position:absolute;bottom:0;left:0;right:0;height:45%;background:rgba(8,8,28,0.95);backdrop-filter:blur(12px);border-top:1px solid rgba(80,180,255,0.2);padding:14px 18px;overflow-y:auto;z-index:10;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span id="detail-title" style="font-size:0.95rem;font-weight:600;color:rgba(120,200,255,0.95);"></span>
+        <button onclick="document.getElementById('structure-detail-panel').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:1rem;">✕</button>
+      </div>
+      <div id="detail-stats" style="margin-bottom:8px;padding:6px 10px;background:rgba(80,180,255,0.06);border-radius:6px;font-size:0.75rem;color:rgba(160,200,255,0.8);"></div>
+      <div id="detail-text" style="font-size:0.8rem;color:rgba(200,220,255,0.85);line-height:1.6;white-space:pre-wrap;"></div>
+    </div>
   </div>
   <!-- Organ info popup -->
   <div id="organ-popup" style="display:none;position:fixed;z-index:10000;width:340px;background:rgba(10,12,40,0.92);backdrop-filter:blur(14px);border:1px solid rgba(80,180,255,0.3);border-radius:14px;box-shadow:0 0 40px rgba(50,130,255,0.12);padding:16px 20px;color:#e0e8ff;font-size:0.82rem;line-height:1.6;">
@@ -550,15 +558,19 @@
     });
   }
 
-  // --- Organ popup ---
-  async function showOrganPopup(structureName, mouseX, mouseY) {
-    console.log('[POPUP] showOrganPopup called:', structureName, mouseX, mouseY);
-    const popup = document.getElementById('organ-popup');
-    const title = document.getElementById('popup-title');
-    const stats = document.getElementById('popup-stats');
-    const insight = document.getElementById('popup-insight');
+  // --- Organ popup (AR) / detail panel (normal view) ---
+  const _inAR = () => document.getElementById('ar-overlay').style.display !== 'none';
 
-    // Find structure data - try exact match first, then fuzzy match by keywords
+  async function showOrganPopup(structureName, mouseX, mouseY) {
+    const inAR = _inAR();
+
+    // In normal view: use the right-panel detail drawer instead of floating popup
+    const popup   = inAR ? document.getElementById('organ-popup') : document.getElementById('structure-detail-panel');
+    const title   = inAR ? document.getElementById('popup-title')  : document.getElementById('detail-title');
+    const stats   = inAR ? document.getElementById('popup-stats')  : document.getElementById('detail-stats');
+    const insight = inAR ? document.getElementById('popup-insight'): document.getElementById('detail-text');
+
+    // Find structure data
     let s = structuresData?.structures?.find(st => st.name === structureName);
     if (!s) {
       const lower = structureName.toLowerCase();
@@ -573,7 +585,6 @@
           (lower.includes('brain') && n === 'brain');
       });
     }
-    console.log('[POPUP] Structure match:', s ? s.name : 'none', 'for', structureName);
     const displayName = structureName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
     title.textContent = displayName;
@@ -586,15 +597,17 @@
       stats.innerHTML = '<span style="color:rgba(160,200,255,0.7);">' + displayName + ' detected in scan</span>';
     }
 
-    // Position popup near click
-    const pw = 340;
-    let px = mouseX + 16;
-    let py = mouseY - 40;
-    if (px + pw > window.innerWidth) px = mouseX - pw - 16;
-    if (py < 10) py = 10;
-    if (py + 300 > window.innerHeight) py = window.innerHeight - 310;
-    popup.style.left = px + 'px';
-    popup.style.top = py + 'px';
+    // AR: position floating popup near finger; normal: just show the drawer
+    if (inAR) {
+      const pw = 340;
+      let px = mouseX + 16;
+      let py = mouseY - 40;
+      if (px + pw > window.innerWidth) px = mouseX - pw - 16;
+      if (py < 10) py = 10;
+      if (py + 300 > window.innerHeight) py = window.innerHeight - 310;
+      popup.style.left = px + 'px';
+      popup.style.top = py + 'px';
+    }
     popup.style.display = 'block';
 
     // Show insight from pre-built data (no K2 call for individual organs - too slow/messy)
