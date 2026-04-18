@@ -179,46 +179,40 @@ app.post('/api/analyze', async (req, res) => {
     console.log('BiMediX2 unavailable, falling back to K2:', err.message);
   }
 
-  // Fallback: K2 streaming
-  const response = await fetch(process.env.K2_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.K2_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true }),
-  });
+  // Fallback: K2 (non-streaming, then clean and send)
+  try {
+    const response = await fetch(process.env.K2_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.K2_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: false, max_tokens: 300 }),
+    });
+    const data = await response.json();
+    let raw = data.choices?.[0]?.message?.content || '';
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let inThink = false;
-  let buffer = '';
+    // Strip <think>...</think> blocks
+    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value);
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
+    // Strip everything that looks like reasoning/meta-commentary
+    // Find the actual patient-facing text: usually starts with "Your" or "The" or "This"
+    const match = raw.match(/(?:^|\n)\s*(Your |The |This |A |An |It |We |Based )([\s\S]*)/im);
+    if (match) raw = match[1] + match[2];
 
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) { res.write(line + '\n'); continue; }
-      const data = line.slice(6);
-      if (data === '[DONE]') { res.write(line + '\n'); continue; }
-      try {
-        const parsed = JSON.parse(data);
-        let content = parsed.choices?.[0]?.delta?.content || '';
-        if (content.includes('<think>')) inThink = true;
-        if (inThink) {
-          if (content.includes('</think>')) { content = content.split('</think>').pop(); inThink = false; }
-          else { content = ''; }
-        }
-        if (content) {
-          parsed.choices[0].delta.content = content;
-          res.write('data: ' + JSON.stringify(parsed) + '\n');
-        }
-      } catch { res.write(line + '\n'); }
-    }
+    // Take only first 3 sentences
+    const sentences = raw.match(/[^.!?\n]+[.!?]+/g) || [raw];
+    const clean = sentences
+      .filter(s => s.trim().length > 15 && !s.match(/user|system|instruction|meta|roleplay|sentence|output|format|comply|heading|bullet/i))
+      .slice(0, 3)
+      .join(' ')
+      .trim();
+
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean || raw.slice(0, 300) } }] }) + '\n');
+    res.write('data: [DONE]\n');
+  } catch (err) {
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Unable to generate insight. Please consult your doctor about these findings.' } }] }) + '\n');
+    res.write('data: [DONE]\n');
   }
   res.end();
 });
