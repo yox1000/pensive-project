@@ -189,7 +189,7 @@
     <button id="ar-view-btn" style="display:none;position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;" onclick="launchMarkerAR()">AR View</button>
   </div>
   <!-- Organ info popup -->
-  <div id="organ-popup" style="display:none;position:absolute;z-index:50;width:340px;background:rgba(10,12,40,0.92);backdrop-filter:blur(14px);border:1px solid rgba(80,180,255,0.3);border-radius:14px;box-shadow:0 0 40px rgba(50,130,255,0.12);padding:16px 20px;color:#e0e8ff;font-size:0.82rem;line-height:1.6;">
+  <div id="organ-popup" style="display:none;position:fixed;z-index:10000;width:340px;background:rgba(10,12,40,0.92);backdrop-filter:blur(14px);border:1px solid rgba(80,180,255,0.3);border-radius:14px;box-shadow:0 0 40px rgba(50,130,255,0.12);padding:16px 20px;color:#e0e8ff;font-size:0.82rem;line-height:1.6;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <span id="popup-title" style="font-size:1rem;font-weight:600;color:rgba(120,200,255,0.95);"></span>
       <button onclick="closeOrganPopup()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1.1rem;">x</button>
@@ -672,17 +672,25 @@
         const range = finding_data?.normal_range_ml || '';
         const status = finding_data?.status?.replace(/_/g, ' ') || 'detected';
 
-        // Build full scan context so K2 can give holistic insight
-        const allStructures = structuresData.structures.map(st => {
-          const fd = finding_data ? null : null; // we already have finding_data for clicked one
-          return `${st.name.replace(/_/g,' ')}: ${st.volume_ml} mL`;
-        }).join(', ');
+        // Build fully-connected context: every structure with volume + status
+        // so K2 can reason about the focused structure in the context of the whole brain
+        const allAnalysis = await (async () => {
+          try {
+            const r = await fetch(BACKEND + '/analyze/' + currentScanId);
+            if (r.ok) return await r.json();
+          } catch {} return null;
+        })();
 
-        // If the clicked structure is a sub-region (gyrus) mapped to a lobe, clarify in prompt
+        const allStructures = structuresData.structures.map(st => {
+          const finding = allAnalysis?.findings?.find(f => f.name === st.name);
+          const stStatus = finding?.status?.replace(/_/g, ' ') || 'detected';
+          return `${st.name.replace(/_/g,' ')}: ${st.volume_ml}mL (${stStatus})`;
+        }).join('; ');
+
         const matchedName = s.name.replace(/_/g, ' ');
         const isSubRegion = displayName.toLowerCase() !== matchedName;
         const regionNote = isSubRegion ? ` (part of the ${matchedName}, total lobe volume ${vol} mL)` : `, volume ${vol} mL`;
-        const prompt = `Brain scan: ${allStructures}. Patient asks about ${displayName}${regionNote}. Status: ${status}. Write exactly 2 sentences: 1) whether this is normal or concerning 2) what the patient should do. Start with "Your" directly.`;
+        const prompt = `Full brain scan — all structures: ${allStructures}. The patient is asking specifically about their ${displayName}${regionNote}, status: ${status}. Considering how all brain structures relate to each other, write exactly 2 sentences explaining: 1) whether this structure is normal or concerning given the overall brain health 2) what the patient should do. Start with "Your" directly.`;
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
@@ -1147,22 +1155,18 @@
             if (hitName) {
               highlightARStructure(hitName);
               indicator.style.display = 'block';
-              indicator.textContent = 'Pointing at: ' + hitName.replace(/_/g, ' ');
-              if (pointingAt === hitName) {
-                if (!pointingTimer) {
-                  pointingTimer = setTimeout(() => {
-                    selectedInAR = hitName;
-                    indicator.textContent = 'Selected: ' + hitName.replace(/_/g, ' ');
-                    showOrganPopup(hitName, window.innerWidth / 2 - 170, 80);
-                    pointingTimer = null;
-                  }, 800);
-                }
-              } else {
-                clearTimeout(pointingTimer); pointingTimer = null; pointingAt = hitName;
+              indicator.textContent = '☝️ ' + hitName.replace(/_/g, ' ');
+              // Show popup immediately on hover — position near finger tip
+              if (pointingAt !== hitName) {
+                pointingAt = hitName;
+                const popupX = Math.min(dotX + 20, window.innerWidth - 360);
+                const popupY = Math.max(dotY - 40, 10);
+                showOrganPopup(hitName, popupX, popupY);
               }
             } else {
               resetARHighlight();
-              clearTimeout(pointingTimer); pointingTimer = null; pointingAt = null;
+              pointingAt = null;
+              document.getElementById('organ-popup').style.display = 'none';
               indicator.style.display = 'block';
               indicator.textContent = '☝️ Pointing...';
             }
