@@ -22,7 +22,7 @@ app.use('/api/backend', createProxyMiddleware({
   proxyTimeout: 600000,
 }));
 
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, { etag: false, lastModified: false, setHeaders: (res) => { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); } }));
 app.use('/niivue', express.static(path.join(__dirname, 'node_modules/@niivue/niivue/dist')));
 
 // Upload scan → TotalSegmentator → return scan_id
