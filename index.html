@@ -175,6 +175,7 @@
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button id="modeBrain" onclick="event.stopPropagation();setMode('brain')" style="padding:6px 14px;background:rgba(80,180,255,0.3);border:1px solid rgba(80,180,255,0.5);color:rgba(180,220,255,0.9);border-radius:6px;cursor:pointer;font-size:0.75rem;">Brain</button>
       <button id="modeLung" onclick="event.stopPropagation();setMode('lung')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Lungs</button>
+      <button id="modeLeg" onclick="event.stopPropagation();setMode('leg')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Leg</button>
       <button id="modeTorso" onclick="event.stopPropagation();setMode('torso')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Full Body</button>
     </div>
     <span class="upload-status" id="uploadStatus">Processing scan...</span>
@@ -231,7 +232,7 @@
 
   window.setMode = function(mode) {
     scanMode = mode;
-    ['modeBrain', 'modeLung', 'modeTorso'].forEach(id => {
+    ['modeBrain', 'modeLung', 'modeLeg', 'modeTorso'].forEach(id => {
       const btn = document.getElementById(id);
       const isActive = (id === 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1)) ||
                        (id === 'modeBrain' && mode === 'brain') ||
@@ -313,7 +314,7 @@
       document.getElementById('ar-view-btn').style.display = 'block';
       const deepBtn = document.getElementById('toggle-deep-btn');
       deepBtn.style.display = 'block';
-      deepBtn.textContent = scanMode === 'lung' ? 'Show Airways' : 'Hide Deep';
+      deepBtn.textContent = scanMode === 'lung' ? 'Show Airways' : scanMode === 'leg' ? 'Show Bones' : 'Hide Deep';
       deepVisible = true;
 
     } catch (err) {
@@ -917,16 +918,23 @@
   let deepVisible = true;
   const deepNames = ['thalamus', 'deep_gray', 'ventricles', 'brainstem', 'medulla', 'cerebellum'];
   const lungOuterNames = ['upper_lobe', 'lower_lobe', 'middle_lobe', 'heart'];
+  const legMuscleNames = ['rectus', 'vastus', 'biceps', 'semimembranosus', 'semitendinosus', 'sartorius', 'adductor', 'gracilis', 'gluteus', 'gastrocnemius', 'soleus', 'tibialis', 'iliotibial', 'fibularis'];
   window.toggleDeepStructures = function() {
     deepVisible = !deepVisible;
     const btn = document.getElementById('toggle-deep-btn');
     const isLung = scanMode === 'lung';
-    btn.textContent = deepVisible ? (isLung ? 'Show Airways' : 'Hide Deep') : (isLung ? 'Show Lobes' : 'Show Deep');
+    const isLeg = scanMode === 'leg';
+    const labels = {
+      brain: ['Hide Deep', 'Show Deep'],
+      lung: ['Show Airways', 'Show Lobes'],
+      leg: ['Show Bones', 'Show Muscles'],
+    };
+    const [showLabel, hideLabel] = labels[scanMode] || labels.brain;
+    btn.textContent = deepVisible ? showLabel : hideLabel;
     btn.style.background = deepVisible ? 'rgba(180,80,255,0.15)' : 'rgba(80,255,180,0.15)';
     btn.style.borderColor = deepVisible ? 'rgba(180,80,255,0.4)' : 'rgba(80,255,180,0.4)';
-    console.log('[TOGGLE] mode:', scanMode, 'isLung:', isLung, 'deepVisible:', deepVisible);
     if (window._medlensModel) {
-      const hideList = isLung ? lungOuterNames : deepNames;
+      const hideList = isLeg ? legMuscleNames : (isLung ? lungOuterNames : deepNames);
       let toggled = 0;
       window._medlensModel.traverse(child => {
         if (child.isMesh) {
@@ -1539,9 +1547,12 @@
     arDeepVisible = !arDeepVisible;
     const btn = document.getElementById('ar-deep-btn');
     const isLung = scanMode === 'lung';
-    btn.textContent = arDeepVisible ? (isLung ? 'Show Airways' : 'Hide Deep') : (isLung ? 'Show Lobes' : 'Show Deep');
+    const isLeg = scanMode === 'leg';
+    const arLabels = { brain: ['Hide Deep','Show Deep'], lung: ['Show Airways','Show Lobes'], leg: ['Show Bones','Show Muscles'] };
+    const [arShow, arHide] = arLabels[scanMode] || arLabels.brain;
+    btn.textContent = arDeepVisible ? arShow : arHide;
     if (window._arModel) {
-      const hideList = isLung ? lungOuterNames : deepNames;
+      const hideList = isLeg ? legMuscleNames : (isLung ? lungOuterNames : deepNames);
       window._arModel.traverse(child => {
         if (child.isMesh) {
           const n = (child.name || '').toLowerCase();
