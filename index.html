@@ -355,7 +355,7 @@
     scene.background = new THREE.Color(0x080818);
 
     const camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 2000);
-    camera.position.set(0, 0, 36);
+    camera.position.set(0, 0, 3.6);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
@@ -461,7 +461,7 @@
       scene.add(model);
       window._medlensModel = model;
 
-      camera.position.set(0, 0, 36);
+      camera.position.set(0, 0, 3.6);
       controls.target.set(0, 0, 0);
       controls.update();
     } catch (err) {
