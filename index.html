@@ -196,40 +196,54 @@
   </div>
 </div>
 
-<script type="module">
-  import * as THREE from 'three';
-  import { OrbitControls } from 'https://esm.sh/three@0.170.0/addons/controls/OrbitControls.js';
-  import { GLTFLoader } from 'https://esm.sh/three@0.170.0/addons/loaders/GLTFLoader.js';
-
+<script>
+  // --- Upload handling (non-module, runs immediately) ---
   const BACKEND = '/api/backend';
   let currentScanId = null;
   let structuresData = null;
   let nv = null;
 
-  // --- Upload handling ---
   const box = document.getElementById('uploadBox');
   const input = document.getElementById('fileInput');
-  const status = document.getElementById('uploadStatus');
+  const statusEl = document.getElementById('uploadStatus');
 
-  box.addEventListener('click', () => input.click());
+  box.addEventListener('click', (e) => {
+    e.stopPropagation();
+    input.click();
+  });
   box.addEventListener('dragover', e => { e.preventDefault(); });
   box.addEventListener('drop', e => {
     e.preventDefault();
     if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   });
   input.addEventListener('change', () => { if (input.files[0]) handleFile(input.files[0]); });
+</script>
 
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'https://esm.sh/three@0.170.0/addons/controls/OrbitControls.js';
+  import { GLTFLoader } from 'https://esm.sh/three@0.170.0/addons/loaders/GLTFLoader.js';
+
+  // Expose to global scope for the non-module script
+  window.THREE = THREE;
+  window.OrbitControls = OrbitControls;
+  window.GLTFLoader = GLTFLoader;
+  window._threeReady = true;
+  console.log('Three.js loaded successfully');
+</script>
+
+<script>
   async function handleFile(file) {
     box.classList.add('processing');
-    status.textContent = 'Uploading and segmenting scan...';
-    status.style.display = 'block';
+    statusEl.textContent = 'Uploading and segmenting scan...';
+    statusEl.style.display = 'block';
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
       // 1. Segment
-      status.textContent = 'Running AI segmentation (~30s)...';
+      statusEl.textContent = 'Running AI segmentation (~30s)...';
       const segRes = await fetch(`${BACKEND}/segment`, { method: 'POST', body: formData });
       if (!segRes.ok) throw new Error(await segRes.text());
       structuresData = await segRes.json();
@@ -240,7 +254,7 @@
       document.getElementById('viewer-screen').classList.add('active');
 
       // 3. Load NiiVue
-      status.textContent = 'Loading viewer...';
+      statusEl.textContent = 'Loading viewer...';
       await initNiiVue(currentScanId);
 
       // 4. Load 3D mesh
@@ -250,11 +264,11 @@
       renderStructures(structuresData.structures);
 
     } catch (err) {
-      status.textContent = `Error: ${err.message}`;
+      statusEl.textContent = `Error: ${err.message}`;
       console.error(err);
       setTimeout(() => {
         box.classList.remove('processing');
-        status.style.display = 'none';
+        statusEl.style.display = 'none';
       }, 3000);
     }
   }
@@ -276,6 +290,12 @@
 
   // --- Three.js ---
   async function initThreeJS(scanId) {
+    // Wait for Three.js module to load
+    while (!window._threeReady) await new Promise(r => setTimeout(r, 100));
+    const THREE = window.THREE;
+    const OrbitControls = window.OrbitControls;
+    const GLTFLoader = window.GLTFLoader;
+
     const container = document.getElementById('threejs-panel');
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -374,7 +394,8 @@
   }
 
   function highlightStructure(name) {
-    if (!window._medlensModel) return;
+    if (!window._medlensModel || !window.THREE) return;
+    const THREE = window.THREE;
     window._medlensModel.traverse(child => {
       if (child.isMesh) {
         if (child.name === name) {
