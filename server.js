@@ -52,6 +52,35 @@ app.get('/api/mesh/:scanId', async (req, res) => {
   res.send(Buffer.from(buffer));
 });
 
+// Proxy original scan NIfTI (for NiiVue) - stream to handle large files
+app.get('/api/scan/:scanId', async (req, res) => {
+  const { Readable } = require('stream');
+  const response = await fetch(`${SEG_API}/scan/${req.params.scanId}`);
+  if (!response.ok) return res.status(response.status).json({ error: 'Failed to get scan' });
+  res.setHeader('Content-Type', 'application/gzip');
+  if (response.headers.get('content-length')) {
+    res.setHeader('Content-Length', response.headers.get('content-length'));
+  }
+  Readable.fromWeb(response.body).pipe(res);
+});
+
+// Proxy segmentation NIfTI (for NiiVue overlay)
+app.get('/api/segmentation/:scanId', async (req, res) => {
+  const response = await fetch(`${SEG_API}/segmentation/${req.params.scanId}`);
+  if (!response.ok) return res.status(response.status).json({ error: 'Failed to get segmentation' });
+  res.setHeader('Content-Type', 'application/gzip');
+  const buffer = await response.arrayBuffer();
+  res.send(Buffer.from(buffer));
+});
+
+// Proxy medical analysis
+app.get('/api/analyze/:scanId', async (req, res) => {
+  const response = await fetch(`${SEG_API}/analyze/${req.params.scanId}`);
+  if (!response.ok) return res.status(response.status).json({ error: 'Failed to get analysis' });
+  const data = await response.json();
+  res.json(data);
+});
+
 const SYSTEM_PROMPT = `You are a medical communication assistant. You will receive a detailed clinical analysis of a medical scan produced by a segmentation AI. Your job is to reason carefully through it and rewrite it for a patient with no medical background — clear, calm, and honest. Never downplay serious findings. Never diagnose. Always recommend consulting a doctor.
 
 Respond in exactly this format:
