@@ -1039,9 +1039,12 @@
         }
 
         function isOpenPalm(lm) {
-          // All 4 finger tips clearly above their PIP joints
+          // All 4 fingers: tips clearly above their PIP joints
           const fingers = [[8,6],[12,10],[16,14],[20,18]];
-          return fingers.every(([tip, pip]) => lm[pip].y - lm[tip].y > 0.04);
+          const fourExtended = fingers.every(([tip, pip]) => lm[pip].y - lm[tip].y > 0.04);
+          // Thumb extended: tip(4) spread away from palm center (lm[9])
+          const thumbExtended = dist(lm[4], lm[9]) > 0.15;
+          return fourExtended && thumbExtended;
         }
 
         function isFist(lm) {
@@ -1127,13 +1130,9 @@
           const lm = results.multiHandLandmarks[0];
           const index = lm[8];
 
-          // Detect current gesture
-          const gesNow = isPointing(lm) ? 'point' : isOpenPalm(lm) ? 'scale' : isFist(lm) ? 'rotate' : null;
-
-          // Lock in gesture on first detection; release only when hand goes neutral
-          if (gesNow && !activeGesture) activeGesture = gesNow;
-          if (!gesNow) { activeGesture = null; prevPalmX = null; prevPalmY = null; indicator.style.display = 'none'; }
-          if (!activeGesture) return;
+          // Re-evaluate gesture every frame — no locking, releases immediately when gesture stops
+          activeGesture = isPointing(lm) ? 'point' : isOpenPalm(lm) ? 'scale' : isFist(lm) ? 'rotate' : null;
+          if (!activeGesture) { prevPalmX = null; prevPalmY = null; indicator.style.display = 'none'; return; }
 
           // --- POINT ---
           if (activeGesture === 'point') {
