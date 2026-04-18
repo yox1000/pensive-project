@@ -1,8 +1,18 @@
 require('dotenv').config();
 const express = require('express');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 app.use(express.json());
+
+// Proxy /api/backend/* to the Python segmentation backend
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:9999';
+app.use('/api/backend', createProxyMiddleware({
+  target: BACKEND_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api/backend': '' },
+}));
+
 app.use(express.static(__dirname));
 
 const SYSTEM_PROMPT = `You are a medical communication assistant. You will receive a detailed clinical analysis of a brain scan written by a medical AI. Your job is to reason carefully through it and rewrite it for a patient with no medical background — clear, calm, and honest. Never downplay serious findings. Never diagnose. Always recommend consulting a doctor.
