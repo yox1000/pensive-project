@@ -550,16 +550,23 @@
     btn.disabled = false;
   };
 
-  // --- Marker-based AR (works on desktop with webcam) ---
+  // --- Face-tracked AR (works on desktop with webcam, no marker needed) ---
   window.launchMarkerAR = function() {
     if (!currentScanId) return;
 
     const overlay = document.getElementById('ar-overlay');
     overlay.style.display = 'block';
-    overlay.innerHTML = '<div style="position:absolute;top:16px;right:16px;z-index:10000;"><button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:1rem;">Close AR</button></div><div style="position:absolute;bottom:16px;left:16px;z-index:10000;color:white;font-size:0.8rem;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;">Point camera at a Hiro marker. Print from: <a href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" target="_blank" style="color:#4af;">here</a></div>';
+    overlay.innerHTML = `
+      <div style="position:absolute;top:16px;right:16px;z-index:10000;">
+        <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:1rem;">Close AR</button>
+      </div>
+      <div style="position:absolute;bottom:16px;left:16px;z-index:10000;color:white;font-size:0.8rem;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;">
+        Face-tracked AR: the 3D model follows your face. Press +/- to scale.
+      </div>
+    `;
 
-    // Load A-Frame + AR.js
     const loadScript = (src) => new Promise((resolve, reject) => {
+      if (document.querySelector('script[src="' + src + '"]')) return resolve();
       const s = document.createElement('script');
       s.src = src;
       s.onload = resolve;
@@ -568,48 +575,52 @@
     });
 
     (async () => {
-      if (!window.AFRAME) await loadScript('https://aframe.io/releases/1.3.0/aframe.min.js');
-      if (!window.THREEx) await loadScript('https://raw.githack.com/AR-js-org/AR.js/dev/aframe/build/aframe-ar.js');
+      await loadScript('https://aframe.io/releases/1.5.0/aframe.min.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-aframe.prod.js');
 
       const scene = document.createElement('a-scene');
+      scene.setAttribute('mindar-face', 'autoStart: true');
       scene.setAttribute('embedded', '');
-      scene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false;');
+      scene.setAttribute('color-space', 'sRGB');
+      scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights');
       scene.setAttribute('vr-mode-ui', 'enabled: false');
+      scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
       scene.style.position = 'absolute';
       scene.style.inset = '0';
 
-      const marker = document.createElement('a-marker');
-      marker.setAttribute('preset', 'hiro');
-      scene.appendChild(marker);
-
-      // Load the GLB mesh into the marker
-      const meshEntity = document.createElement('a-entity');
-      meshEntity.setAttribute('position', '0 0 0');
-      meshEntity.setAttribute('scale', '0.1 0.1 0.1');
-      marker.appendChild(meshEntity);
-
-      const cam = document.createElement('a-entity');
-      cam.setAttribute('camera', '');
+      // Camera
+      const cam = document.createElement('a-camera');
+      cam.setAttribute('position', '0 0 0');
+      cam.setAttribute('look-controls', 'enabled: false');
       scene.appendChild(cam);
+
+      // Face anchor (index 1 = nose bridge area)
+      const anchor = document.createElement('a-entity');
+      anchor.setAttribute('mindar-face--target', 'anchorIndex: 1');
+      scene.appendChild(anchor);
+
+      // Entity to hold the 3D model
+      const meshEntity = document.createElement('a-entity');
+      meshEntity.setAttribute('position', '0 -0.3 0.1');
+      meshEntity.setAttribute('scale', '0.15 0.15 0.15');
+      anchor.appendChild(meshEntity);
 
       overlay.appendChild(scene);
 
-      // Wait for scene to initialize, then load our GLB
+      // Load GLB into the face anchor
       setTimeout(() => {
         const THREE = window.THREE;
         const GLTFLoader = window.GLTFLoader;
         if (!GLTFLoader) return;
 
         const loader = new GLTFLoader();
-        loader.load(`${BACKEND}/mesh/${currentScanId}`, (gltf) => {
+        loader.load(BACKEND + '/mesh/' + currentScanId, (gltf) => {
           const model = gltf.scene;
 
-          // Center
           const box3 = new THREE.Box3().setFromObject(model);
           const center = box3.getCenter(new THREE.Vector3());
           model.position.sub(center);
 
-          // Scale to fit on marker
           const size = box3.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
           if (maxDim > 0) model.scale.multiplyScalar(2.0 / maxDim);
@@ -617,22 +628,23 @@
           model.traverse(child => {
             if (child.isMesh) {
               child.material.transparent = true;
-              child.material.opacity = 0.8;
+              child.material.opacity = 0.75;
               child.material.side = THREE.DoubleSide;
             }
           });
 
           meshEntity.setObject3D('mesh', model);
+          window._arMeshEntity = meshEntity;
         });
-      }, 500);
+      }, 1000);
 
       // Scale controls
-      let arScale = 0.1;
+      let arScale = 0.15;
       window._arScaleHandler = (e) => {
         if (e.key === '+' || e.key === '=') arScale *= 1.2;
         else if (e.key === '-') arScale /= 1.2;
         else return;
-        meshEntity.setAttribute('scale', `${arScale} ${arScale} ${arScale}`);
+        if (window._arMeshEntity) window._arMeshEntity.setAttribute('scale', arScale + ' ' + arScale + ' ' + arScale);
       };
       window.addEventListener('keydown', window._arScaleHandler);
     })();
@@ -640,14 +652,21 @@
 
   window.closeMarkerAR = function() {
     const overlay = document.getElementById('ar-overlay');
-    // Remove A-Frame scene
     const arScene = overlay.querySelector('a-scene');
-    if (arScene) arScene.parentNode.removeChild(arScene);
+    if (arScene) {
+      // Stop MindAR
+      try { arScene.components['mindar-face']?.stop(); } catch(e) {}
+      arScene.parentNode.removeChild(arScene);
+    }
     overlay.style.display = 'none';
     overlay.innerHTML = '';
     if (window._arScaleHandler) {
       window.removeEventListener('keydown', window._arScaleHandler);
     }
+    // Stop webcam
+    document.querySelectorAll('video').forEach(v => {
+      if (v.srcObject) v.srcObject.getTracks().forEach(t => t.stop());
+    });
   };
 </script>
 </body>
