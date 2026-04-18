@@ -200,15 +200,6 @@
       <div id="detail-text" style="font-size:0.8rem;color:rgba(200,220,255,0.85);line-height:1.6;white-space:pre-wrap;"></div>
     </div>
   </div>
-  <!-- Organ info popup -->
-  <div id="organ-popup" style="display:none;position:fixed;z-index:10000;width:340px;background:rgba(10,12,40,0.92);backdrop-filter:blur(14px);border:1px solid rgba(80,180,255,0.3);border-radius:14px;box-shadow:0 0 40px rgba(50,130,255,0.12);padding:16px 20px;color:#e0e8ff;font-size:0.82rem;line-height:1.6;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span id="popup-title" style="font-size:1rem;font-weight:600;color:rgba(120,200,255,0.95);"></span>
-      <button onclick="closeOrganPopup()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1.1rem;">x</button>
-    </div>
-    <div id="popup-stats" style="margin-bottom:10px;padding:8px 10px;background:rgba(80,180,255,0.06);border-radius:8px;font-size:0.78rem;"></div>
-    <div id="popup-insight" style="white-space:pre-wrap;font-size:0.8rem;color:rgba(200,220,255,0.85);"></div>
-  </div>
   <!-- AR overlay -->
   <div id="ar-overlay" style="display:none;position:fixed;inset:0;z-index:9999;"></div>
   <div id="info-panel">
@@ -216,10 +207,22 @@
       <h3>Detected Structures</h3>
       <div id="structures-container"></div>
     </div>
-    <div id="analysis-panel">
-      <h3>Patient Report</h3>
-      <button id="analyze-btn" onclick="runAnalysis()">Generate AI Report</button>
-      <div id="analysis-text"></div>
+    <div id="right-panel" style="flex:2;display:flex;flex-direction:column;gap:12px;">
+      <!-- Structure Insight (appears when clicking a structure) -->
+      <div id="organ-panel" style="display:none;padding:14px 18px;background:rgba(80,180,255,0.04);border:1px solid rgba(80,180,255,0.2);border-radius:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span id="popup-title" style="font-size:0.95rem;font-weight:600;color:rgba(120,200,255,0.95);"></span>
+          <button onclick="closeOrganPopup()" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:0.9rem;">x</button>
+        </div>
+        <div id="popup-stats" style="margin-bottom:8px;padding:6px 10px;background:rgba(80,180,255,0.06);border-radius:6px;font-size:0.78rem;"></div>
+        <div id="popup-insight" style="white-space:pre-wrap;font-size:0.8rem;color:rgba(200,220,255,0.85);line-height:1.5;"></div>
+      </div>
+      <!-- Patient Report -->
+      <div id="analysis-panel">
+        <h3>Patient Report</h3>
+        <button id="analyze-btn" onclick="runAnalysis()">Generate AI Report</button>
+        <div id="analysis-text"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -543,32 +546,64 @@
   function highlightStructure(name) {
     if (!window._medlensModel || !window.THREE) return;
     const THREE = window.THREE;
+    const lower = name.toLowerCase().replace(/_/g, ' ');
+
+    // Map synthetic names to keywords for fuzzy matching 3D mesh nodes
+    const keywordMap = {
+      'frontal_lobe': 'frontal',
+      'parietal_lobe': 'parietal',
+      'temporal_lobe': 'temporal',
+      'occipital_lobe': 'occipital',
+      'cerebellum': 'cerebellum',
+      'brainstem': 'brainstem',
+      'thalamus': 'thalamus',
+      'caudate_nucleus': 'caudate',
+      'lentiform_nucleus': 'lentiform',
+      'ventricle': 'ventricle',
+      'insular_cortex': 'insul',
+      'internal_capsule': 'capsule',
+      'brain': 'brain',
+      'skull': 'skull',
+      // Torso
+      'liver': 'liver', 'heart': 'heart', 'spleen': 'spleen',
+      'kidney_right': 'kidney', 'kidney_left': 'kidney',
+      'stomach': 'stomach', 'pancreas': 'pancreas',
+      'lung_upper_lobe_left': 'lung', 'lung_lower_lobe_left': 'lung',
+      'lung_upper_lobe_right': 'lung', 'lung_middle_lobe_right': 'lung',
+      'lung_lower_lobe_right': 'lung', 'aorta': 'aorta',
+    };
+
+    const keyword = keywordMap[name] || lower;
+    console.log('[HIGHLIGHT] name:', name, 'keyword:', keyword);
+    let matchCount = 0, totalMeshes = 0;
+
     window._medlensModel.traverse(child => {
       if (child.isMesh) {
-        if (child.name === name) {
-          child.material.opacity = 1.0;
-          child.material.emissive = new THREE.Color(0x3388ff);
-          child.material.emissiveIntensity = 0.3;
-        } else {
-          child.material.opacity = 0.3;
-          child.material.emissive = new THREE.Color(0x000000);
-          child.material.emissiveIntensity = 0;
-        }
+        totalMeshes++;
+        const childLower = (child.name || '').toLowerCase();
+        const isMatch = child.name === name || childLower.includes(keyword);
+        if (isMatch) matchCount++;
+
+        // Simple approach: show matching, hide non-matching
+        child.visible = isMatch;
       }
     });
+
+    // If nothing matched, show everything again
+    if (matchCount === 0) {
+      window._medlensModel.traverse(child => { if (child.isMesh) child.visible = true; });
+    }
+
+    console.log('[HIGHLIGHT] matched', matchCount, 'of', totalMeshes, 'meshes');
   }
 
-  // --- Organ popup (AR) / detail panel (normal view) ---
-  const _inAR = () => document.getElementById('ar-overlay').style.display !== 'none';
-
+  // --- Organ popup ---
   async function showOrganPopup(structureName, mouseX, mouseY) {
-    const inAR = _inAR();
-
-    // In normal view: use the right-panel detail drawer instead of floating popup
-    const popup   = inAR ? document.getElementById('organ-popup') : document.getElementById('structure-detail-panel');
-    const title   = inAR ? document.getElementById('popup-title')  : document.getElementById('detail-title');
-    const stats   = inAR ? document.getElementById('popup-stats')  : document.getElementById('detail-stats');
-    const insight = inAR ? document.getElementById('popup-insight'): document.getElementById('detail-text');
+    console.log('[POPUP] showOrganPopup called:', structureName, mouseX, mouseY);
+    const popup = document.getElementById('organ-panel');
+    const title = document.getElementById('popup-title');
+    const stats = document.getElementById('popup-stats');
+    const insight = document.getElementById('popup-insight');
 
     // Find structure data
     let s = structuresData?.structures?.find(st => st.name === structureName);
@@ -597,17 +632,7 @@
       stats.innerHTML = '<span style="color:rgba(160,200,255,0.7);">' + displayName + ' detected in scan</span>';
     }
 
-    // AR: position floating popup near finger; normal: just show the drawer
-    if (inAR) {
-      const pw = 340;
-      let px = mouseX + 16;
-      let py = mouseY - 40;
-      if (px + pw > window.innerWidth) px = mouseX - pw - 16;
-      if (py < 10) py = 10;
-      if (py + 300 > window.innerHeight) py = window.innerHeight - 310;
-      popup.style.left = px + 'px';
-      popup.style.top = py + 'px';
-    }
+    // Show the organ panel (fixed position above patient report)
     popup.style.display = 'block';
 
     // Show insight from pre-built data (no K2 call for individual organs - too slow/messy)
@@ -815,7 +840,7 @@
   }
 
   window.closeOrganPopup = function() {
-    document.getElementById('organ-popup').style.display = 'none';
+    document.getElementById('organ-panel').style.display = 'none';
   };
 
   // --- K2 Analysis ---
@@ -1183,7 +1208,7 @@
             } else {
               resetARHighlight();
               pointingAt = null;
-              document.getElementById('organ-popup').style.display = 'none';
+              document.getElementById('organ-panel').style.display = 'none';
               indicator.style.display = 'block';
               indicator.textContent = '☝️ Pointing...';
             }
