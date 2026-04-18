@@ -899,6 +899,7 @@
         let prevPinchDist = null;
         let prevPalmX = null;
         let prevPalmY = null;
+        let activeGesture = null; // 'scale' | 'rotate' | 'point' | 'pinchzoom' | null
         const baseScale = 180 / maxDim;
 
         // Pointing gesture state
@@ -974,6 +975,8 @@
           if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
             prevPinchDist = null;
             prevPalmX = null;
+            prevPalmY = null;
+            activeGesture = null;
             indicator.style.display = 'none';
             return;
           }
@@ -984,12 +987,13 @@
             drawLandmarks(handCtx, landmarks, { color: 'rgba(80,220,255,0.6)', lineWidth: 1, radius: 3 });
           }
 
-          // Two hands: pinch-to-zoom (distance between index tips)
+          // Two hands: pinch-to-zoom — always takes priority
           if (results.multiHandLandmarks.length === 2) {
-            const idx1 = results.multiHandLandmarks[0][8]; // INDEX_FINGER_TIP
+            activeGesture = 'pinchzoom';
+            prevPalmX = null; prevPalmY = null;
+            const idx1 = results.multiHandLandmarks[0][8];
             const idx2 = results.multiHandLandmarks[1][8];
             const pinchDist = dist(idx1, idx2);
-
             if (prevPinchDist !== null) {
               const delta = pinchDist - prevPinchDist;
               arScale = Math.max(0.1, Math.min(5, arScale + delta * 1.2));
@@ -998,77 +1002,62 @@
               indicator.textContent = 'Pinch zoom: ' + arScale.toFixed(2) + 'x';
             }
             prevPinchDist = pinchDist;
-            prevPalmX = null;
             return;
           }
 
-          // Single hand gestures
           prevPinchDist = null;
           const lm = results.multiHandLandmarks[0];
-          const thumb = lm[4];  // THUMB_TIP
-          const index = lm[8];  // INDEX_FINGER_TIP
-          const pinch = dist(thumb, index);
+          const index = lm[8];
 
-          // POINTING gesture: select organs
-          if (isPointing(lm)) {
+          // Detect current gesture
+          const gesNow = isPointing(lm) ? 'point' : isOpenPalm(lm) ? 'scale' : isFist(lm) ? 'rotate' : null;
+
+          // Lock in gesture on first detection; release only when hand goes neutral
+          if (gesNow && !activeGesture) activeGesture = gesNow;
+          if (!gesNow) { activeGesture = null; prevPalmX = null; prevPalmY = null; indicator.style.display = 'none'; }
+          if (!activeGesture) return;
+
+          // --- POINT ---
+          if (activeGesture === 'point') {
             const hitName = raycastFromFinger(index);
-
-            // Draw pointer dot on hand canvas
-            const dotX = (1 - index.x) * handCanvas.width; // mirrored
+            const dotX = (1 - index.x) * handCanvas.width;
             const dotY = index.y * handCanvas.height;
             handCtx.beginPath();
             handCtx.arc(dotX, dotY, 12, 0, Math.PI * 2);
             handCtx.fillStyle = hitName ? 'rgba(80,255,180,0.7)' : 'rgba(255,180,80,0.5)';
             handCtx.fill();
-            handCtx.strokeStyle = 'white';
-            handCtx.lineWidth = 2;
-            handCtx.stroke();
-
+            handCtx.strokeStyle = 'white'; handCtx.lineWidth = 2; handCtx.stroke();
             if (hitName) {
               highlightARStructure(hitName);
               indicator.style.display = 'block';
               indicator.textContent = 'Pointing at: ' + hitName.replace(/_/g, ' ');
-
               if (pointingAt === hitName) {
-                // Held on same organ, check timer
                 if (!pointingTimer) {
                   pointingTimer = setTimeout(() => {
-                    // Selected! Show popup
                     selectedInAR = hitName;
                     indicator.textContent = 'Selected: ' + hitName.replace(/_/g, ' ');
                     showOrganPopup(hitName, window.innerWidth / 2 - 170, 80);
                     pointingTimer = null;
-                  }, 800); // hold 0.8s to select
+                  }, 800);
                 }
               } else {
-                // Moved to different organ
-                clearTimeout(pointingTimer);
-                pointingTimer = null;
-                pointingAt = hitName;
+                clearTimeout(pointingTimer); pointingTimer = null; pointingAt = hitName;
               }
             } else {
               resetARHighlight();
-              clearTimeout(pointingTimer);
-              pointingTimer = null;
-              pointingAt = null;
+              clearTimeout(pointingTimer); pointingTimer = null; pointingAt = null;
               indicator.style.display = 'block';
-              indicator.textContent = 'Pointing...';
+              indicator.textContent = '☝️ Pointing...';
             }
+            prevPalmX = null; prevPalmY = null;
 
-            prevPalmX = null;
-            prevPalmY = null;
-            return;
-          }
-
-          // Reset pointing state when not pointing
-          if (pointingTimer) { clearTimeout(pointingTimer); pointingTimer = null; }
-          pointingAt = null;
-          if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
-
-          if (isOpenPalm(lm)) {
-            // Flat open palm rising/falling = scale up/down
+          // --- SCALE ---
+          } else if (activeGesture === 'scale') {
+            if (pointingTimer) { clearTimeout(pointingTimer); pointingTimer = null; }
+            pointingAt = null;
+            if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
             if (prevPalmY !== null) {
-              const dy = prevPalmY - lm[9].y; // move up = negative delta = scale up
+              const dy = prevPalmY - lm[9].y;
               arScale = Math.max(0.1, Math.min(5, arScale + dy * 2));
               arModel.scale.setScalar(arScale * baseScale);
               indicator.style.display = 'block';
@@ -1076,24 +1065,20 @@
             }
             prevPalmY = lm[9].y;
             prevPalmX = null;
-          } else if (isFist(lm)) {
-            // Closed fist drag = rotate
-            const palmX = lm[9].x;
-            const palmY = lm[9].y;
+
+          // --- ROTATE ---
+          } else if (activeGesture === 'rotate') {
+            if (pointingTimer) { clearTimeout(pointingTimer); pointingTimer = null; }
+            pointingAt = null;
+            if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
             if (prevPalmX !== null) {
-              const dx = (palmX - prevPalmX) * 3;
-              const dy = (palmY - prevPalmY) * 3;
+              const dx = (lm[9].x - prevPalmX) * 3;
               arModel.rotation.y += dx;
-              arModel.rotation.x += dy;
               indicator.style.display = 'block';
               indicator.textContent = '✊ Rotating';
             }
-            prevPalmX = palmX;
-            prevPalmY = palmY;
-          } else {
-            prevPalmX = null;
+            prevPalmX = lm[9].x;
             prevPalmY = null;
-            indicator.style.display = 'none';
           }
         });
 
