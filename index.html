@@ -816,8 +816,66 @@
         let prevPalmY = null;
         const baseScale = 180 / maxDim;
 
+        // Pointing gesture state
+        const arRaycaster = new THREE.Raycaster();
+        const arPointer = new THREE.Vector2();
+        let pointingAt = null;
+        let pointingTimer = null;
+        let selectedInAR = null;
+
         function dist(a, b) {
           return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+        }
+
+        function isPointing(lm) {
+          // Index finger extended, middle/ring/pinky curled
+          const indexTip = lm[8].y;
+          const indexMcp = lm[5].y;
+          const middleTip = lm[12].y;
+          const middleMcp = lm[9].y;
+          const ringTip = lm[16].y;
+          const ringMcp = lm[13].y;
+          // Index extended (tip above mcp in screen coords = lower y)
+          const indexExtended = indexMcp - indexTip > 0.04;
+          // Others curled (tip below or near mcp)
+          const middleCurled = middleTip - middleMcp > -0.02;
+          const ringCurled = ringTip - ringMcp > -0.02;
+          return indexExtended && middleCurled && ringCurled;
+        }
+
+        function raycastFromFinger(indexTip) {
+          // Map hand landmark (0-1) to screen coords, mirrored
+          arPointer.x = -(indexTip.x * 2 - 1);
+          arPointer.y = -(indexTip.y * 2 - 1);
+          arRaycaster.setFromCamera(arPointer, arCamera);
+          const hits = arRaycaster.intersectObjects(arModel.children, true);
+          return hits.length > 0 ? hits[0].object.name : null;
+        }
+
+        function highlightARStructure(name) {
+          arModel.traverse(child => {
+            if (child.isMesh) {
+              if (child.name === name) {
+                child.material.opacity = 1.0;
+                child.material.emissive = new THREE.Color(0x3388ff);
+                child.material.emissiveIntensity = 0.4;
+              } else {
+                child.material.opacity = 0.4;
+                child.material.emissive = new THREE.Color(0x000000);
+                child.material.emissiveIntensity = 0;
+              }
+            }
+          });
+        }
+
+        function resetARHighlight() {
+          arModel.traverse(child => {
+            if (child.isMesh) {
+              child.material.opacity = 0.85;
+              child.material.emissive = new THREE.Color(0x000000);
+              child.material.emissiveIntensity = 0;
+            }
+          });
         }
 
         hands.onResults((results) => {
@@ -862,6 +920,62 @@
           const thumb = lm[4];  // THUMB_TIP
           const index = lm[8];  // INDEX_FINGER_TIP
           const pinch = dist(thumb, index);
+
+          // POINTING gesture: select organs
+          if (isPointing(lm)) {
+            const hitName = raycastFromFinger(index);
+
+            // Draw pointer dot on hand canvas
+            const dotX = (1 - index.x) * handCanvas.width; // mirrored
+            const dotY = index.y * handCanvas.height;
+            handCtx.beginPath();
+            handCtx.arc(dotX, dotY, 12, 0, Math.PI * 2);
+            handCtx.fillStyle = hitName ? 'rgba(80,255,180,0.7)' : 'rgba(255,180,80,0.5)';
+            handCtx.fill();
+            handCtx.strokeStyle = 'white';
+            handCtx.lineWidth = 2;
+            handCtx.stroke();
+
+            if (hitName) {
+              highlightARStructure(hitName);
+              indicator.style.display = 'block';
+              indicator.textContent = 'Pointing at: ' + hitName.replace(/_/g, ' ');
+
+              if (pointingAt === hitName) {
+                // Held on same organ, check timer
+                if (!pointingTimer) {
+                  pointingTimer = setTimeout(() => {
+                    // Selected! Show popup
+                    selectedInAR = hitName;
+                    indicator.textContent = 'Selected: ' + hitName.replace(/_/g, ' ');
+                    showOrganPopup(hitName, window.innerWidth / 2 - 170, 80);
+                    pointingTimer = null;
+                  }, 800); // hold 0.8s to select
+                }
+              } else {
+                // Moved to different organ
+                clearTimeout(pointingTimer);
+                pointingTimer = null;
+                pointingAt = hitName;
+              }
+            } else {
+              resetARHighlight();
+              clearTimeout(pointingTimer);
+              pointingTimer = null;
+              pointingAt = null;
+              indicator.style.display = 'block';
+              indicator.textContent = 'Pointing...';
+            }
+
+            prevPalmX = null;
+            prevPalmY = null;
+            return;
+          }
+
+          // Reset pointing state when not pointing
+          if (pointingTimer) { clearTimeout(pointingTimer); pointingTimer = null; }
+          pointingAt = null;
+          if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
 
           if (pinch < 0.06) {
             // Pinch: scale with vertical movement
