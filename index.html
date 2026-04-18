@@ -266,20 +266,34 @@
       document.getElementById('upload-screen').classList.add('hidden');
       document.getElementById('viewer-screen').classList.add('active');
 
-      // 3. Load NiiVue (only if real segmentation exists)
+      // 3 & 4. Try loading NiiVue + 3D mesh. In demo mode these won't exist.
+      let hasViewer = false;
       try {
         statusEl.textContent = 'Loading viewer...';
         await initNiiVue(currentScanId);
+        hasViewer = true;
       } catch (e) {
         console.warn('NiiVue skipped (demo mode):', e.message);
-        document.getElementById('niivue-panel').innerHTML = '<span class="panel-label">2D Slice Viewer</span><div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(120,160,220,0.5);font-size:0.85rem;text-align:center;padding:20px;">Upload a real MRI scan with<br>demo mode off to see 2D slices</div>';
       }
 
-      // 4. Load 3D mesh (try real mesh, fall back to structure list only)
       try {
         await initThreeJS(currentScanId);
+        hasViewer = true;
       } catch (e) {
         console.warn('3D mesh skipped:', e.message);
+      }
+
+      // If no viewers loaded (demo mode), expand info panel to full screen
+      if (!hasViewer) {
+        const vs = document.getElementById('viewer-screen');
+        vs.style.gridTemplateColumns = '1fr';
+        vs.style.gridTemplateRows = '1fr';
+        document.getElementById('niivue-panel').style.display = 'none';
+        document.getElementById('threejs-panel').style.display = 'none';
+        const info = document.getElementById('info-panel');
+        info.style.maxHeight = '100vh';
+        info.style.flexDirection = 'column';
+        info.style.gridColumn = '1';
       }
 
       // 5. Populate structures list
