@@ -448,7 +448,10 @@
 
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) model.scale.multiplyScalar(300 / maxDim);
+      // Scale model to unit size then adjust camera to fit
+      const scaleFactor = 2.0 / maxDim;  // normalize to ~2 units
+      if (maxDim > 0) model.scale.multiplyScalar(scaleFactor);
+      console.log('Model maxDim:', maxDim, 'scaleFactor:', scaleFactor);
 
       model.traverse(child => {
         if (child.isMesh) {
@@ -461,7 +464,13 @@
       scene.add(model);
       window._medlensModel = model;
 
-      camera.position.set(0, 0, 3.6);
+      // Auto-fit camera
+      const fittedBox = new THREE.Box3().setFromObject(model);
+      const fittedSize = fittedBox.getSize(new THREE.Vector3());
+      const fitMax = Math.max(fittedSize.x, fittedSize.y, fittedSize.z);
+      const dist = fitMax / (2 * Math.tan(Math.PI * camera.fov / 360)) * 1.3;
+      console.log('Fitted size:', fitMax, 'camera dist:', dist);
+      camera.position.set(0, 0, dist);
       controls.target.set(0, 0, 0);
       controls.update();
     } catch (err) {
