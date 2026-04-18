@@ -459,11 +459,13 @@
         }
       });
 
-      // Rotate brain 90 degrees so it faces forward (nose toward camera)
-      model.rotation.x = -Math.PI / 2;
+      // Wrap in a group so the 90-degree rotation doesn't affect gesture controls
+      const modelGroup = new THREE.Group();
+      modelGroup.rotation.x = -Math.PI / 2;  // rotate brain to face forward
+      modelGroup.add(model);
 
-      scene.add(model);
-      window._medlensModel = model;
+      scene.add(modelGroup);
+      window._medlensModel = modelGroup;
 
       // Position camera based on actual model size
       camera.position.set(0, 0, maxDim * 0.55);
