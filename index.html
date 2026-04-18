@@ -881,7 +881,7 @@
     const arModel = window._medlensModel.clone();
     const bbox = new THREE.Box3().setFromObject(arModel);
     const center = bbox.getCenter(new THREE.Vector3());
-    arModel.position.sub(center);
+    arModel.position.sub(center); // shift geometry so visual center sits at pivot origin
     const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     if (maxDim > 0) arModel.scale.multiplyScalar(180 / maxDim);
@@ -895,8 +895,13 @@
         child.material.depthWrite = false;
       }
     });
-    scene.add(arModel);
+
+    // Wrap in pivot so rotation.y spins around the model's visual center
+    const pivot = new THREE.Group();
+    pivot.add(arModel);
+    scene.add(pivot);
     window._arModel = arModel;
+    window._arPivot = pivot;
 
     let arScale = 1.0;
     window._arScaleHandler = (e) => {
@@ -1130,7 +1135,7 @@
             if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
             if (prevPalmX !== null) {
               const dx = (lm[9].x - prevPalmX) * 3;
-              arModel.rotation.y += dx;
+              pivot.rotation.y += dx;
               indicator.style.display = 'block';
               indicator.textContent = '✊ Rotating';
             }
