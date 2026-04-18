@@ -581,10 +581,25 @@
       }
     });
 
-    // If nothing matched, show everything again
+    // If nothing matched, show everything (this structure is internal/not in surface mesh)
     if (matchCount === 0) {
       window._medlensModel.traverse(child => { if (child.isMesh) child.visible = true; });
     }
+
+    // Show reset button if something is highlighted
+    let resetBtn = document.getElementById('reset-highlight-btn');
+    if (!resetBtn) {
+      resetBtn = document.createElement('button');
+      resetBtn.id = 'reset-highlight-btn';
+      resetBtn.textContent = 'Show All';
+      resetBtn.style.cssText = 'position:absolute;top:36px;right:12px;z-index:10;padding:4px 12px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.3);color:rgba(180,220,255,0.8);border-radius:6px;cursor:pointer;font-size:0.7rem;';
+      resetBtn.onclick = () => {
+        window._medlensModel.traverse(child => { if (child.isMesh) child.visible = true; });
+        resetBtn.style.display = 'none';
+      };
+      document.getElementById('threejs-panel').appendChild(resetBtn);
+    }
+    resetBtn.style.display = matchCount > 0 ? 'block' : 'none';
 
     console.log('[HIGHLIGHT] matched', matchCount, 'of', totalMeshes, 'meshes');
   }
