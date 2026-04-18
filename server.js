@@ -195,10 +195,12 @@ app.post('/api/analyze', async (req, res) => {
     // Strip <think>...</think> blocks
     raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
 
-    // Strip everything that looks like reasoning/meta-commentary
-    // Find the actual patient-facing text: usually starts with "Your" or "The" or "This"
-    const match = raw.match(/(?:^|\n)\s*(Your |The |This |A |An |It |We |Based )([\s\S]*)/im);
-    if (match) raw = match[1] + match[2];
+    // Strip everything before the actual patient-facing text
+    raw = raw.replace(/^[\s\S]*?(?=Your |The scan|The measurement|The imaging|This scan|This result|This value|This finding|Based on)/im, '');
+    // Remove wrapping quotes
+    raw = raw.replace(/^["'\s]+|["'\s]+$/g, '');
+    // Remove "The content:" prefix
+    raw = raw.replace(/^The content:\s*/i, '');
 
     // Take only first 3 sentences
     const sentences = raw.match(/[^.!?\n]+[.!?]+/g) || [raw];

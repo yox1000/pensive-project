@@ -648,7 +648,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          medicalAnalysis: 'What is the ' + displayName + ' and what is its function in the human body? Explain in 3 sentences for a patient.'
+          medicalAnalysis: 'Structure: ' + displayName + ', Finding: detected in brain scan. Explain what this brain structure does in 3 sentences for a patient.'
         }),
       });
       const reader = k2Res.body.getReader();
