@@ -491,8 +491,9 @@
       raycaster.setFromCamera(pointer, camera);
       if (!window._medlensModel) return;
       const hits = raycaster.intersectObjects(window._medlensModel.children, true);
-      if (hits.length > 0) {
-        const name = hits[0].object.name;
+      const visibleHit = hits.find(h => h.object.visible && h.object.material?.opacity > 0.1);
+      if (visibleHit) {
+        const name = visibleHit.object.name;
         if (name) {
           document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
           document.querySelectorAll('.structure-item').forEach(el => {
@@ -1007,7 +1008,7 @@
         <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
       <div id="ar-voice-status" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(10,12,40,0.9);border:1px solid rgba(80,180,255,0.3);border-radius:12px;padding:10px 18px;color:#e0e8ff;font-size:0.8rem;text-align:center;max-width:400px;"></div>
-      <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;transform:scaleX(-1);"></canvas>
+      <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
       <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
       <div id="ar-label" style="display:none;position:absolute;z-index:20;max-width:300px;background:rgba(10,12,40,0.92);backdrop-filter:blur(12px);border:1px solid rgba(80,180,255,0.35);border-radius:10px;padding:10px 14px;color:#e0e8ff;font-size:0.78rem;line-height:1.5;pointer-events:none;"></div>
       <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
@@ -1193,11 +1194,14 @@
 
         function raycastFromFinger(indexTip) {
           // Map hand landmark (0-1) to screen coords, mirrored
-          arPointer.x = -(indexTip.x * 2 - 1);
+          // Mirror X to match mirrored video: (1-x) maps to screen, then to NDC
+          arPointer.x = ((1 - indexTip.x) * 2 - 1);
           arPointer.y = -(indexTip.y * 2 - 1);
           arRaycaster.setFromCamera(arPointer, arCamera);
           const hits = arRaycaster.intersectObjects(arModel.children, true);
-          return hits.length > 0 ? hits[0].object.name : null;
+          // Skip hidden meshes (e.g. deep structures toggled off)
+          const visibleHit = hits.find(h => h.object.visible);
+          return visibleHit ? visibleHit.object.name : null;
         }
 
         function highlightARStructure(name) {
@@ -1240,8 +1244,11 @@
             return;
           }
 
-          // Draw hand landmarks
-          for (const landmarks of results.multiHandLandmarks) {
+          // Mirror landmarks to match mirrored video, then draw
+          const mirroredHands = results.multiHandLandmarks.map(lms =>
+            lms.map(l => ({ x: 1 - l.x, y: l.y, z: l.z }))
+          );
+          for (const landmarks of mirroredHands) {
             drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, { color: 'rgba(80,180,255,0.4)', lineWidth: 2 });
             drawLandmarks(handCtx, landmarks, { color: 'rgba(80,220,255,0.6)', lineWidth: 1, radius: 3 });
           }
@@ -1280,7 +1287,7 @@
           // --- POINT ---
           if (activeGesture === 'point') {
             const hitName = raycastFromFinger(index);
-            const dotX = (1 - index.x) * handCanvas.width;
+            const dotX = (1 - index.x) * handCanvas.width;  // already mirrored
             const dotY = index.y * handCanvas.height;
             handCtx.beginPath();
             handCtx.arc(dotX, dotY, 12, 0, Math.PI * 2);
