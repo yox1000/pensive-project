@@ -448,9 +448,7 @@
 
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      // Scale to 200 units (matches light positions at 100-200)
-      if (maxDim > 0) model.scale.multiplyScalar(200 / maxDim);
-
+      // Don't scale - use original mm coordinates, position camera to match
       model.traverse(child => {
         if (child.isMesh) {
           child.material.transparent = true;
@@ -462,8 +460,14 @@
       scene.add(model);
       window._medlensModel = model;
 
-      // Camera distance = 1.5x the scaled model size
-      camera.position.set(0, 0, 350);
+      // Position camera based on actual model size
+      camera.position.set(0, 0, maxDim * 0.8);
+      camera.far = maxDim * 5;
+      camera.updateProjectionMatrix();
+      // Move lights to match model scale
+      scene.children.forEach(c => {
+        if (c.isDirectionalLight) c.position.multiplyScalar(maxDim / 100);
+      });
       controls.target.set(0, 0, 0);
       controls.update();
     } catch (err) {
