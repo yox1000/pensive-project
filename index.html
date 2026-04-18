@@ -577,108 +577,98 @@
     popup.style.top = py + 'px';
     popup.style.display = 'block';
 
-    // Fetch analysis if available, otherwise ask K2
-    insight.textContent = 'Loading AI insight...';
-    insight.className = 'loading';
-
-    try {
-      // Try to get the analysis from backend
-      const analysisRes = await fetch(BACKEND + '/analyze/' + currentScanId);
-      if (analysisRes.ok) {
-        const analysis = await analysisRes.json();
-        const finding = analysis.findings?.find(f => f.name === structureName);
-        if (finding) {
-          let text = finding.description || displayName;
-          text += '\n\nStatus: ' + (finding.status || 'detected').replace(/_/g, ' ');
-          if (finding.normal_range_ml) text += '\nNormal range: ' + finding.normal_range_ml + ' mL';
-          if (finding.deviation) text += '\nNote: ' + finding.deviation;
-          insight.textContent = text;
-          insight.className = '';
-
-          // Now get K2 to explain further
-          insight.textContent += '\n\nAsking AI for more detail...';
-          const k2Res = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              medicalAnalysis: 'Explain this finding to a patient in 3-4 sentences. Structure: ' + displayName +
-                ', Volume: ' + (s?.volume_ml || 'unknown') + ' mL' +
-                (finding.normal_range_ml ? ', Normal range: ' + finding.normal_range_ml + ' mL' : '') +
-                (finding.deviation ? ', Finding: ' + finding.deviation : ', Finding: within normal range') +
-                '. Be concise, calm, and honest.'
-            }),
-          });
-
-          // Stream K2 response
-          const reader = k2Res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let k2Text = '';
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value);
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-                try {
-                  const parsed = JSON.parse(data);
-                  let content = parsed.choices?.[0]?.delta?.content || '';
-                  if (content.includes('<think>')) window._popupThink = true;
-                  if (window._popupThink) {
-                    if (content.includes('</think>')) {
-                      content = content.split('</think>').pop();
-                      window._popupThink = false;
-                    } else { content = ''; }
-                  }
-                  if (content) k2Text += content;
-                } catch {}
-              }
-            }
-          }
-
-          if (k2Text) {
-            insight.textContent = text + '\n\n' + k2Text.trim();
-          }
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Analysis fetch failed:', err);
-    }
-
-    // Fallback: ask AI about the structure directly
-    insight.textContent = 'Getting AI insight...';
-    try {
-      const k2Res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          medicalAnalysis: 'Structure: ' + displayName + ', Finding: detected in brain scan. Explain what this brain structure does in 3 sentences for a patient.'
-        }),
-      });
-      const reader = k2Res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '', txt = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value);
-        const lines = buf.split('\n'); buf = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
-            try { let c = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''; txt += c; } catch {}
-          }
-        }
-      }
-      insight.textContent = txt || displayName + ' detected in scan.';
-    } catch {
-      insight.textContent = displayName + ' detected in scan.';
-    }
+    // Show insight from pre-built data (no K2 call for individual organs - too slow/messy)
     insight.className = '';
+
+    // Known brain structure descriptions
+    const brainInfo = {
+      'brainstem': 'The brainstem controls essential life functions including breathing, heart rate, and sleep cycles. It serves as the main relay between your brain and spinal cord. Any changes here are closely monitored by doctors.',
+      'cerebellum': 'The cerebellum coordinates your movements, balance, and fine motor skills. It helps you walk steadily, speak clearly, and perform precise actions. It contains more neurons than the rest of the brain combined.',
+      'frontal_lobe': 'The frontal lobe is the largest lobe and controls decision-making, planning, and personality. It also manages voluntary movement and speech production. It is essential for complex thought and social behavior.',
+      'parietal_lobe': 'The parietal lobe processes touch, temperature, and spatial awareness. It helps you understand where your body is in space and interpret sensory information. It plays a key role in reading and mathematics.',
+      'occipital_lobe': 'The occipital lobe is your primary visual processing center. It interprets everything you see, including color, shape, and motion. Damage here can affect vision even if the eyes are healthy.',
+      'temporal_lobe': 'The temporal lobe processes hearing, language comprehension, and memory. It helps you understand speech, recognize faces, and form new memories. It is critical for learning and emotional responses.',
+      'thalamus': 'The thalamus acts as a relay station, routing sensory signals to the correct brain regions. It plays a role in consciousness, sleep, and alertness. Almost all sensory information passes through it.',
+      'caudate_nucleus': 'The caudate nucleus is part of the basal ganglia and helps control voluntary movement. It also plays a role in learning, memory, and reward processing. Changes can affect movement coordination.',
+      'lentiform_nucleus': 'The lentiform nucleus contributes to motor function and procedural learning. It is part of the basal ganglia system that helps control movement. It works closely with other deep brain structures.',
+      'ventricle': 'The ventricles are fluid-filled spaces that produce cerebrospinal fluid (CSF). This fluid cushions your brain and removes waste products. Ventricle size is routinely checked on brain scans.',
+      'insular_cortex': 'The insular cortex processes emotions, body awareness, and taste perception. It helps you feel pain, temperature, and internal body states. It plays a role in empathy and self-awareness.',
+      'internal_capsule': 'The internal capsule is a major white matter highway carrying signals between the brain and body. Motor commands and sensory information travel through it. It is a critical structure for normal function.',
+      'subarachnoid_space': 'The subarachnoid space contains cerebrospinal fluid that cushions and protects your brain. It sits between two protective membranes surrounding the brain. Its size is routinely assessed on scans.',
+      'venous_sinuses': 'The venous sinuses are channels that drain used blood from your brain back to your heart. They run between layers of the protective membrane covering the brain. Proper drainage is important for brain health.',
+      'septum_pellucidum': 'The septum pellucidum is a thin membrane that separates the two lateral ventricles. It is a normal anatomical structure visible on most brain scans. Its appearance helps doctors assess brain symmetry.',
+      'central_sulcus': 'The central sulcus is the major groove that divides the frontal and parietal lobes. The motor cortex sits in front of it and the sensory cortex behind it. It is a key anatomical landmark.',
+    };
+
+    // Known organ descriptions
+    const organInfo = {
+      'liver': 'Your liver is the largest internal organ, responsible for filtering blood, processing nutrients, and producing bile for digestion. A volume within the normal range indicates healthy liver size. Discuss any concerns with your doctor.',
+      'spleen': 'The spleen filters your blood and plays a role in immune defense. It removes old blood cells and stores white blood cells. A normal-sized spleen suggests healthy blood filtering function.',
+      'heart': 'Your heart pumps blood throughout your entire body through four chambers. The measured volume reflects the overall size of the heart muscle and chambers. A normal heart volume is a reassuring finding.',
+      'kidney_right': 'Your right kidney filters blood to remove waste and maintain fluid balance. It produces urine and helps regulate blood pressure. A normal kidney volume suggests healthy kidney function.',
+      'kidney_left': 'Your left kidney filters blood to remove waste and maintain fluid balance. It produces urine and helps regulate blood pressure. A normal kidney volume suggests healthy kidney function.',
+      'stomach': 'The stomach breaks down food using acid and enzymes as the first major digestive step. Its size can vary depending on when you last ate. Your doctor can explain what the volume means for you.',
+      'pancreas': 'The pancreas produces insulin for blood sugar control and enzymes for digestion. It is a small but vital organ located behind the stomach. Volume changes may warrant follow-up with your doctor.',
+      'aorta': 'The aorta is your body\'s largest artery, carrying oxygen-rich blood from the heart. Its size is routinely checked to ensure there is no enlargement. A normal aorta diameter is reassuring.',
+      'lung_upper_lobe_left': 'This is the upper section of your left lung where gas exchange occurs. Oxygen enters your blood and carbon dioxide is removed here. Normal lung volume indicates healthy lung tissue.',
+      'lung_lower_lobe_left': 'This is the lower section of your left lung, which has a larger surface area for breathing. It handles a significant portion of your gas exchange. Normal volume suggests healthy lung function.',
+      'lung_upper_lobe_right': 'This is the upper section of your right lung. Like all lung lobes, it participates in the exchange of oxygen and carbon dioxide. Normal volume is a positive finding.',
+      'lung_middle_lobe_right': 'The middle lobe is unique to the right lung, which has three lobes compared to the left lung\'s two. It contributes to overall respiratory function. Its size is routinely measured.',
+      'lung_lower_lobe_right': 'This is the largest lobe of the right lung and handles a significant portion of breathing. It sits at the base of the lung near the diaphragm. Normal volume indicates healthy tissue.',
+      'brain': 'The brain is the central organ of your nervous system, controlling thought, memory, emotion, and all body functions. Total brain volume is a standard measurement on brain scans. Your volume is within the expected range.',
+      'skull': 'The skull is the protective bone structure that encases your brain. It is composed of multiple bones fused together. Skull measurements help assess overall head structure.',
+      'spinal_cord': 'The spinal cord carries nerve signals between your brain and the rest of your body. It runs through the protective vertebral column. It is essential for movement and sensation.',
+    };
+
+    if (s && s.description) {
+      // Use backend description + status
+      let text = s.description;
+      // Try to find a richer pre-written insight
+      const infoKey = structureName.toLowerCase();
+      const richText = brainInfo[infoKey] || organInfo[infoKey];
+      if (richText) text = richText;
+
+      // Add volume assessment
+      try {
+        const analysisRes = await fetch(BACKEND + '/analyze/' + currentScanId);
+        if (analysisRes.ok) {
+          const analysis = await analysisRes.json();
+          const finding = analysis.findings?.find(f => f.name === structureName);
+          if (finding && finding.normal_range_ml) {
+            text += '\n\nVolume: ' + s.volume_ml + ' mL (normal: ' + finding.normal_range_ml + ' mL) — ' + (finding.status || 'detected').replace(/_/g, ' ') + '.';
+          }
+        }
+      } catch {}
+
+      insight.textContent = text;
+    } else {
+      // Unknown structure from 3D mesh (Synovia brain regions)
+      const cleanName = structureName.toLowerCase().replace(/[^a-z_]/g, '').replace(/ /g, '_');
+      // Try to match partial names
+      let matched = brainInfo[cleanName];
+      if (!matched) {
+        for (const [key, val] of Object.entries(brainInfo)) {
+          if (structureName.toLowerCase().includes(key.replace('_', ' ')) || key.includes(cleanName)) {
+            matched = val; break;
+          }
+        }
+      }
+      if (!matched) {
+        // Match by lobe/region keywords
+        const lower = structureName.toLowerCase();
+        if (lower.includes('frontal')) matched = brainInfo['frontal_lobe'];
+        else if (lower.includes('parietal')) matched = brainInfo['parietal_lobe'];
+        else if (lower.includes('temporal')) matched = brainInfo['temporal_lobe'];
+        else if (lower.includes('occipital')) matched = brainInfo['occipital_lobe'];
+        else if (lower.includes('cerebellum')) matched = brainInfo['cerebellum'];
+        else if (lower.includes('hippocamp')) matched = 'The hippocampus is essential for forming new memories and spatial navigation. It is one of the first structures affected in Alzheimer\'s disease. Its size is closely monitored on brain scans.';
+        else if (lower.includes('gyrus')) matched = 'This is a ridge on the brain\'s surface that increases the area available for neural processing. Different gyri are associated with specific functions like movement, sensation, or language. Its appearance on your scan is noted for reference.';
+        else if (lower.includes('sulcus')) matched = 'This is a groove or furrow on the brain\'s surface between ridges (gyri). Sulci help increase the brain\'s surface area for more neural connections. Their pattern is unique to each individual.';
+        else if (lower.includes('insula')) matched = brainInfo['insular_cortex'];
+        else matched = 'This brain structure was identified in your scan. It is part of the complex network of regions that work together for normal brain function. Your doctor can explain its significance in the context of your health.';
+      }
+      insight.textContent = matched;
+    }
   }
 
   window.closeOrganPopup = function() {
