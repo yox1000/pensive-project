@@ -576,7 +576,7 @@
 
     if (s) {
       let statsHtml = '<b>Volume:</b> ' + s.volume_ml + ' mL &nbsp; <b>Voxels:</b> ' + s.voxel_count.toLocaleString();
-      if (s.description) statsHtml += '<br><span style="color:rgba(160,200,255,0.7);font-style:italic;">' + s.description + '</span>';
+      if (s.normal_range_ml) statsHtml += ' &nbsp; <b>Normal:</b> ' + s.normal_range_ml + ' mL';
       stats.innerHTML = statsHtml;
     } else {
       stats.innerHTML = '<span style="color:rgba(160,200,255,0.7);">' + displayName + ' detected in scan</span>';
@@ -636,13 +636,11 @@
       'spinal_cord': 'The spinal cord carries nerve signals between your brain and the rest of your body. It runs through the protective vertebral column. It is essential for movement and sensation.',
     };
 
-    if (s && s.description) {
-      // Use backend description + status
-      let text = s.description;
-      // Try to find a richer pre-written insight
+    if (s) {
+      // Use richer pre-written insight, avoid duplicating what's already in stats
       const infoKey = structureName.toLowerCase();
       const richText = brainInfo[infoKey] || organInfo[infoKey];
-      if (richText) text = richText;
+      let text = richText || s.description || displayName + ' detected in scan.';
 
       // Add volume assessment
       try {
@@ -677,7 +675,11 @@
           return `${st.name.replace(/_/g,' ')}: ${st.volume_ml} mL`;
         }).join(', ');
 
-        const prompt = `Full brain scan context: ${allStructures}. The patient is asking about: ${displayName}, volume ${vol} mL${range ? ' (normal: ' + range + ' mL)' : ''}, status: ${status}. In 2-3 sentences explain what this specific measurement means for THIS patient considering the overall scan findings. Mention any relevant relationships with other structures if applicable. No reasoning, no meta-text, just the patient explanation.`;
+        // If the clicked structure is a sub-region (gyrus) mapped to a lobe, clarify in prompt
+        const matchedName = s.name.replace(/_/g, ' ');
+        const isSubRegion = displayName.toLowerCase() !== matchedName;
+        const regionNote = isSubRegion ? ` (part of the ${matchedName}, total lobe volume ${vol} mL)` : `, volume ${vol} mL`;
+        const prompt = `Scan results: ${allStructures}. Patient selected: ${displayName}${regionNote}${range ? ', normal range: ' + range + ' mL' : ''}, status: ${status}. In 2 sentences: what does this mean for the patient, and should they be concerned. Direct answer only.`;
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
