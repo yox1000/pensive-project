@@ -132,7 +132,7 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `Output ONLY a 3-sentence explanation for a patient. No roleplay, no meta-commentary, no "how's that", no thinking out loud. Just three plain sentences: what was found, if it's normal, and to see their doctor.`;
+const SYSTEM_PROMPT = `You are a radiology assistant. When given scan data, respond with exactly 2 sentences starting with "Your". First sentence states the measurement and if it is normal. Second sentence gives one recommendation. Nothing else.`;
 
 // BiMediX2 running on local cluster via vLLM
 const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';
@@ -187,13 +187,13 @@ app.post('/api/analyze', async (req, res) => {
         'Authorization': `Bearer ${process.env.K2_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true, max_tokens: 400 }),
+      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true, max_tokens: 8000 }),
     });
 
-    // Collect the full streamed response
+    // Collect EVERYTHING including think blocks, then split
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let fullText = '', buf = '', inThink = false;
+    let rawStream = '', buf = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -202,29 +202,41 @@ app.post('/api/analyze', async (req, res) => {
       for (const line of lines) {
         if (!line.startsWith('data: ') || line.slice(6) === '[DONE]') continue;
         try {
-          let c = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || '';
-          if (c.includes('<think>')) inThink = true;
-          if (inThink) {
-            if (c.includes('</think>')) { c = c.split('</think>').pop(); inThink = false; }
-            else continue;
-          }
-          fullText += c;
+          rawStream += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || '';
         } catch {}
       }
     }
 
-    // Clean: find text after </think>, extract patient sentences
-    fullText = fullText.replace(/[""''\\"`]/g, '').replace(/\n+/g, ' ');
-    const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [];
-    const good = sentences.filter(s => {
-      const t = s.trim();
-      return t.length > 20 &&
-        !/\b(must include|should include|we need|the sentence|or mention|start with|the prompt|the user|the system|format|reasoning|output only|comply|what was found|based on overall scan)\b/i.test(t) &&
-        /\b(your|scan|volume|normal|brain|lobe|doctor|health|result|finding|measure|typical|concern|recommend|discuss|continue|appear|show|indicate)\b/i.test(t);
-    }).slice(0, 3);
+    // Split at </think> - everything after is the actual answer
+    let fullText = rawStream;
+    if (rawStream.includes('</think>')) {
+      fullText = rawStream.split('</think>').pop();
+    } else if (rawStream.includes('<think>')) {
+      // Think started but never ended - take nothing from thinking
+      fullText = '';
+    }
 
-    const clean = good.join(' ').trim();
-    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean || 'Your scan findings appear within normal parameters. Please discuss the results with your doctor for a complete assessment.' } }] }) + '\n');
+    // fullText = everything after </think> (the actual answer)
+    fullText = fullText.replace(/[""''\\"`]/g, '').replace(/\n+/g, ' ').trim();
+
+    // Take ALL sentences from the answer, find FIRST "Your" and take from there
+    let clean = '';
+    const firstYour = fullText.indexOf('Your ');
+    if (firstYour >= 0) {
+      const extracted = fullText.substring(firstYour);
+      const sentences = extracted.match(/[^.!?]+[.!?]+/g) || [];
+      clean = sentences.slice(0, 3).join(' ').trim();
+    } else {
+      // No "Your" found - take first 3 medical sentences
+      const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [];
+      clean = sentences
+        .filter(s => s.trim().length > 20 && /\b(volume|normal|scan|brain|heart|mL|doctor|health|measure|lobe)\b/i.test(s))
+        .slice(0, 3).join(' ').trim();
+    }
+
+    if (!clean || clean.length < 20) clean = 'Your scan findings appear within normal parameters. Please discuss the results with your doctor for a complete assessment.';
+
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean } }] }) + '\n');
     res.write('data: [DONE]\n');
   } catch (err) {
     res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Your scan findings appear within normal parameters. Please discuss the results with your doctor for a complete assessment.' } }] }) + '\n');
