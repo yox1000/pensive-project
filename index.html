@@ -576,15 +576,24 @@
         const isMatch = child.name === name || childLower.includes(keyword);
         if (isMatch) matchCount++;
         if (totalMeshes <= 3) console.log('[HIGHLIGHT] mesh:', child.name, 'match:', isMatch);
+        // Clone material so changes don't affect shared materials
+        if (!child._materialCloned) {
+          child.material = child.material.clone();
+          child.material.transparent = true;
+          child.material.side = THREE.DoubleSide;
+          child._materialCloned = true;
+        }
         if (isMatch) {
           child.material.opacity = 1.0;
           child.material.emissive = new THREE.Color(0x3388ff);
-          child.material.emissiveIntensity = 0.3;
+          child.material.emissiveIntensity = 0.5;
+          child.material.color = new THREE.Color(0x66bbff);
         } else {
-          child.material.opacity = 0.25;
+          child.material.opacity = 0.15;
           child.material.emissive = new THREE.Color(0x000000);
           child.material.emissiveIntensity = 0;
         }
+        child.material.needsUpdate = true;
       }
     });
     console.log('[HIGHLIGHT] matched', matchCount, 'of', totalMeshes, 'meshes');
