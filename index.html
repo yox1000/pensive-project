@@ -179,6 +179,7 @@
 
 <!-- Viewer Screen -->
 <div id="viewer-screen">
+  <button onclick="location.reload()" style="position:fixed;top:14px;left:14px;z-index:200;padding:7px 14px;background:rgba(10,12,40,0.85);border:1px solid rgba(80,180,255,0.35);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.78rem;cursor:pointer;backdrop-filter:blur(8px);">&#8592; New Scan</button>
   <div id="niivue-panel">
     <span class="panel-label">2D Slice Viewer</span>
     <canvas id="gl"></canvas>
@@ -766,6 +767,8 @@
     const controls = new (window.OrbitControls)(arCamera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.4;
+    controls.zoomSpeed = 0.5;
 
     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
     const dl = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -944,7 +947,7 @@
 
             if (prevPinchDist !== null) {
               const delta = pinchDist - prevPinchDist;
-              arScale = Math.max(0.1, Math.min(5, arScale + delta * 3));
+              arScale = Math.max(0.1, Math.min(5, arScale + delta * 1.2));
               arModel.scale.setScalar(arScale * baseScale);
               indicator.style.display = 'block';
               indicator.textContent = 'Pinch zoom: ' + arScale.toFixed(2) + 'x';
@@ -1021,7 +1024,7 @@
             // Pinch: scale with vertical movement
             if (prevPalmY !== null) {
               const dy = prevPalmY - lm[9].y; // MIDDLE_FINGER_MCP as palm center
-              arScale = Math.max(0.1, Math.min(5, arScale + dy * 5));
+              arScale = Math.max(0.1, Math.min(5, arScale + dy * 2));
               arModel.scale.setScalar(arScale * baseScale);
               indicator.style.display = 'block';
               indicator.textContent = 'Scale: ' + arScale.toFixed(2) + 'x';
@@ -1033,8 +1036,8 @@
             const palmX = lm[9].x;
             const palmY = lm[9].y;
             if (prevPalmX !== null) {
-              const dx = (palmX - prevPalmX) * 8;
-              const dy = (palmY - prevPalmY) * 8;
+              const dx = (palmX - prevPalmX) * 3;
+              const dy = (palmY - prevPalmY) * 3;
               arModel.rotation.y += dx;
               arModel.rotation.x += dy;
               indicator.style.display = 'block';
