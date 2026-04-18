@@ -174,6 +174,7 @@
     <span class="upload-sub">NIfTI (.nii, .nii.gz)</span>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button id="modeBrain" onclick="event.stopPropagation();setMode('brain')" style="padding:6px 14px;background:rgba(80,180,255,0.3);border:1px solid rgba(80,180,255,0.5);color:rgba(180,220,255,0.9);border-radius:6px;cursor:pointer;font-size:0.75rem;">Brain</button>
+      <button id="modeLung" onclick="event.stopPropagation();setMode('lung')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Lungs</button>
       <button id="modeTorso" onclick="event.stopPropagation();setMode('torso')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Full Body</button>
     </div>
     <span class="upload-status" id="uploadStatus">Processing scan...</span>
@@ -230,12 +231,16 @@
 
   window.setMode = function(mode) {
     scanMode = mode;
-    document.getElementById('modeBrain').style.background = mode === 'brain' ? 'rgba(80,180,255,0.3)' : 'rgba(80,180,255,0.08)';
-    document.getElementById('modeBrain').style.borderColor = mode === 'brain' ? 'rgba(80,180,255,0.5)' : 'rgba(80,180,255,0.2)';
-    document.getElementById('modeBrain').style.color = mode === 'brain' ? 'rgba(180,220,255,0.9)' : 'rgba(120,160,220,0.6)';
-    document.getElementById('modeTorso').style.background = mode === 'torso' ? 'rgba(80,180,255,0.3)' : 'rgba(80,180,255,0.08)';
-    document.getElementById('modeTorso').style.borderColor = mode === 'torso' ? 'rgba(80,180,255,0.5)' : 'rgba(80,180,255,0.2)';
-    document.getElementById('modeTorso').style.color = mode === 'torso' ? 'rgba(180,220,255,0.9)' : 'rgba(120,160,220,0.6)';
+    ['modeBrain', 'modeLung', 'modeTorso'].forEach(id => {
+      const btn = document.getElementById(id);
+      const isActive = (id === 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1)) ||
+                       (id === 'modeBrain' && mode === 'brain') ||
+                       (id === 'modeLung' && mode === 'lung') ||
+                       (id === 'modeTorso' && mode === 'torso');
+      btn.style.background = isActive ? 'rgba(80,180,255,0.3)' : 'rgba(80,180,255,0.08)';
+      btn.style.borderColor = isActive ? 'rgba(80,180,255,0.5)' : 'rgba(80,180,255,0.2)';
+      btn.style.color = isActive ? 'rgba(180,220,255,0.9)' : 'rgba(120,160,220,0.6)';
+    });
   };
 
   const box = document.getElementById('uploadBox');
@@ -579,9 +584,10 @@
       'liver': 'liver', 'heart': 'heart', 'spleen': 'spleen',
       'kidney_right': 'kidney', 'kidney_left': 'kidney',
       'stomach': 'stomach', 'pancreas': 'pancreas',
-      'lung_upper_lobe_left': 'lung', 'lung_lower_lobe_left': 'lung',
-      'lung_upper_lobe_right': 'lung', 'lung_middle_lobe_right': 'lung',
-      'lung_lower_lobe_right': 'lung', 'aorta': 'aorta',
+      'lung_upper_lobe_left': 'upper_lobe_left', 'lung_lower_lobe_left': 'lower_lobe_left',
+      'lung_upper_lobe_right': 'upper_lobe_right', 'lung_middle_lobe_right': 'middle_lobe_right',
+      'lung_lower_lobe_right': 'lower_lobe_right', 'trachea': 'trachea', 'esophagus': 'esophagus',
+      'aorta': 'aorta',
     };
 
     const keyword = keywordMap[name] || lower;
