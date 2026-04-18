@@ -563,8 +563,10 @@
       <div style="position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:8px;">
         <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
+      <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
+      <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
       <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
-        Drag to rotate · Scroll to zoom · +/− to scale
+        Pinch to scale · Open hand to rotate · Drag/scroll also works
       </div>
     `;
 
@@ -661,6 +663,134 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', window._arResizeHandler);
+
+    // --- MediaPipe Hand Tracking for gesture control ---
+    (async () => {
+      const loadScript = (src) => new Promise((resolve, reject) => {
+        if (document.querySelector('script[src="' + src + '"]')) return resolve();
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+
+      try {
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.min.js');
+
+        const handCanvas = document.getElementById('hand-canvas');
+        const handCtx = handCanvas.getContext('2d');
+        const indicator = document.getElementById('gesture-indicator');
+
+        const hands = new Hands({ locateFile: (file) =>
+          'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + file
+        });
+
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 0,
+          minDetectionConfidence: 0.6,
+          minTrackingConfidence: 0.5,
+        });
+
+        let prevPinchDist = null;
+        let prevPalmX = null;
+        let prevPalmY = null;
+        const baseScale = 180 / maxDim;
+
+        function dist(a, b) {
+          return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+        }
+
+        hands.onResults((results) => {
+          handCanvas.width = handCanvas.clientWidth;
+          handCanvas.height = handCanvas.clientHeight;
+          handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+          if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+            prevPinchDist = null;
+            prevPalmX = null;
+            indicator.style.display = 'none';
+            return;
+          }
+
+          // Draw hand landmarks
+          for (const landmarks of results.multiHandLandmarks) {
+            drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, { color: 'rgba(80,180,255,0.4)', lineWidth: 2 });
+            drawLandmarks(handCtx, landmarks, { color: 'rgba(80,220,255,0.6)', lineWidth: 1, radius: 3 });
+          }
+
+          // Two hands: pinch-to-zoom (distance between index tips)
+          if (results.multiHandLandmarks.length === 2) {
+            const idx1 = results.multiHandLandmarks[0][8]; // INDEX_FINGER_TIP
+            const idx2 = results.multiHandLandmarks[1][8];
+            const pinchDist = dist(idx1, idx2);
+
+            if (prevPinchDist !== null) {
+              const delta = pinchDist - prevPinchDist;
+              arScale = Math.max(0.1, Math.min(5, arScale + delta * 3));
+              arModel.scale.setScalar(arScale * baseScale);
+              indicator.style.display = 'block';
+              indicator.textContent = 'Pinch zoom: ' + arScale.toFixed(2) + 'x';
+            }
+            prevPinchDist = pinchDist;
+            prevPalmX = null;
+            return;
+          }
+
+          // Single hand gestures
+          prevPinchDist = null;
+          const lm = results.multiHandLandmarks[0];
+          const thumb = lm[4];  // THUMB_TIP
+          const index = lm[8];  // INDEX_FINGER_TIP
+          const pinch = dist(thumb, index);
+
+          if (pinch < 0.06) {
+            // Pinch: scale with vertical movement
+            if (prevPalmY !== null) {
+              const dy = prevPalmY - lm[9].y; // MIDDLE_FINGER_MCP as palm center
+              arScale = Math.max(0.1, Math.min(5, arScale + dy * 5));
+              arModel.scale.setScalar(arScale * baseScale);
+              indicator.style.display = 'block';
+              indicator.textContent = 'Scale: ' + arScale.toFixed(2) + 'x';
+            }
+            prevPalmY = lm[9].y;
+            prevPalmX = null;
+          } else {
+            // Open hand: rotate model by tracking palm movement
+            const palmX = lm[9].x;
+            const palmY = lm[9].y;
+            if (prevPalmX !== null) {
+              const dx = (palmX - prevPalmX) * 8;
+              const dy = (palmY - prevPalmY) * 8;
+              arModel.rotation.y += dx;
+              arModel.rotation.x += dy;
+              indicator.style.display = 'block';
+              indicator.textContent = 'Rotating';
+            }
+            prevPalmX = palmX;
+            prevPalmY = palmY;
+          }
+        });
+
+        // Feed webcam frames to MediaPipe
+        const mpCamera = new Camera(video, {
+          onFrame: async () => {
+            if (overlay.style.display === 'none') return;
+            await hands.send({ image: video });
+          },
+          width: 640,
+          height: 480,
+        });
+        mpCamera.start();
+        window._mpCamera = mpCamera;
+
+      } catch (err) {
+        console.warn('Hand tracking unavailable:', err.message);
+      }
+    })();
   };
 
   window.closeMarkerAR = function() {
@@ -672,6 +802,7 @@
     overlay.innerHTML = '';
     if (window._arScaleHandler) window.removeEventListener('keydown', window._arScaleHandler);
     if (window._arResizeHandler) window.removeEventListener('resize', window._arResizeHandler);
+    if (window._mpCamera) { try { window._mpCamera.stop(); } catch(e) {} }
   };
 </script>
 </body>
