@@ -183,7 +183,16 @@
     <span class="panel-label">3D Model</span>
     <button id="ar-view-btn" style="display:none;position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;" onclick="launchMarkerAR()">AR View</button>
   </div>
-  <!-- AR overlay (marker-based, works on desktop with webcam) -->
+  <!-- Organ info popup -->
+  <div id="organ-popup" style="display:none;position:absolute;z-index:50;width:340px;background:rgba(10,12,40,0.92);backdrop-filter:blur(14px);border:1px solid rgba(80,180,255,0.3);border-radius:14px;box-shadow:0 0 40px rgba(50,130,255,0.12);padding:16px 20px;color:#e0e8ff;font-size:0.82rem;line-height:1.6;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span id="popup-title" style="font-size:1rem;font-weight:600;color:rgba(120,200,255,0.95);"></span>
+      <button onclick="closeOrganPopup()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:1.1rem;">x</button>
+    </div>
+    <div id="popup-stats" style="margin-bottom:10px;padding:8px 10px;background:rgba(80,180,255,0.06);border-radius:8px;font-size:0.78rem;"></div>
+    <div id="popup-insight" style="white-space:pre-wrap;font-size:0.8rem;color:rgba(200,220,255,0.85);"></div>
+  </div>
+  <!-- AR overlay -->
   <div id="ar-overlay" style="display:none;position:fixed;inset:0;z-index:9999;"></div>
   <div id="info-panel">
     <div id="structures-list">
@@ -415,7 +424,7 @@
       console.error('Failed to load 3D model:', err);
     }
 
-    // Raycasting for structure selection (works in normal + AR)
+    // Raycasting for structure selection + popup
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     renderer.domElement.addEventListener('click', e => {
@@ -433,6 +442,7 @@
             if (el.querySelector('span')?.textContent === name.replace(/_/g, ' ')) el.classList.add('selected');
           });
           highlightStructure(name);
+          showOrganPopup(name, e.clientX, e.clientY);
         }
       }
     });
@@ -469,10 +479,11 @@
       const div = document.createElement('div');
       div.className = 'structure-item';
       div.innerHTML = `<span>${s.name.replace(/_/g, ' ')}</span><span class="structure-vol">${s.volume_ml} mL</span>`;
-      div.addEventListener('click', () => {
+      div.addEventListener('click', (e) => {
         document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
         div.classList.add('selected');
         highlightStructure(s.name);
+        showOrganPopup(s.name, e.clientX, e.clientY);
       });
       container.appendChild(div);
     }
@@ -495,6 +506,111 @@
       }
     });
   }
+
+  // --- Organ popup ---
+  async function showOrganPopup(structureName, mouseX, mouseY) {
+    const popup = document.getElementById('organ-popup');
+    const title = document.getElementById('popup-title');
+    const stats = document.getElementById('popup-stats');
+    const insight = document.getElementById('popup-insight');
+
+    // Find structure data
+    const s = structuresData?.structures?.find(st => st.name === structureName);
+    const displayName = structureName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    title.textContent = displayName;
+
+    if (s) {
+      stats.innerHTML = '<b>Volume:</b> ' + s.volume_ml + ' mL &nbsp; <b>Voxels:</b> ' + s.voxel_count.toLocaleString();
+    } else {
+      stats.innerHTML = 'Structure detected';
+    }
+
+    // Position popup near click
+    const pw = 340;
+    let px = mouseX + 16;
+    let py = mouseY - 40;
+    if (px + pw > window.innerWidth) px = mouseX - pw - 16;
+    if (py < 10) py = 10;
+    if (py + 300 > window.innerHeight) py = window.innerHeight - 310;
+    popup.style.left = px + 'px';
+    popup.style.top = py + 'px';
+    popup.style.display = 'block';
+
+    // Fetch analysis if available, otherwise ask K2
+    insight.textContent = 'Loading AI insight...';
+    insight.className = 'loading';
+
+    try {
+      // Try to get the analysis from backend
+      const analysisRes = await fetch(BACKEND + '/analyze/' + currentScanId);
+      if (analysisRes.ok) {
+        const analysis = await analysisRes.json();
+        const finding = analysis.findings?.find(f => f.name === structureName);
+        if (finding) {
+          let text = finding.description || displayName;
+          text += '\n\nStatus: ' + (finding.status || 'detected').replace(/_/g, ' ');
+          if (finding.normal_range_ml) text += '\nNormal range: ' + finding.normal_range_ml + ' mL';
+          if (finding.deviation) text += '\nNote: ' + finding.deviation;
+          insight.textContent = text;
+          insight.className = '';
+
+          // Now get K2 to explain further
+          insight.textContent += '\n\nAsking AI for more detail...';
+          const k2Res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              medicalAnalysis: 'Explain this finding to a patient in 3-4 sentences. Structure: ' + displayName +
+                ', Volume: ' + (s?.volume_ml || 'unknown') + ' mL' +
+                (finding.normal_range_ml ? ', Normal range: ' + finding.normal_range_ml + ' mL' : '') +
+                (finding.deviation ? ', Finding: ' + finding.deviation : ', Finding: within normal range') +
+                '. Be concise, calm, and honest.'
+            }),
+          });
+
+          // Stream K2 response
+          const reader = k2Res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let k2Text = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value);
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') continue;
+                try {
+                  const parsed = JSON.parse(data);
+                  const content = parsed.choices?.[0]?.delta?.content || '';
+                  k2Text += content;
+                } catch {}
+              }
+            }
+          }
+
+          if (k2Text) {
+            insight.textContent = text + '\n\n' + k2Text.trim();
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Analysis fetch failed:', err);
+    }
+
+    // Fallback: just show basic info
+    insight.textContent = displayName + ' detected in scan.';
+    insight.className = '';
+  }
+
+  window.closeOrganPopup = function() {
+    document.getElementById('organ-popup').style.display = 'none';
+  };
 
   // --- K2 Analysis ---
   window.runAnalysis = async function() {
