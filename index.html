@@ -665,31 +665,46 @@
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
+        console.log('[K2] Starting fetch with prompt length:', prompt.length);
+        console.log('[K2] Prompt:', prompt.substring(0, 200) + '...');
         fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ medicalAnalysis: prompt }),
         }).then(async (k2Res) => {
+          console.log('[K2] Response status:', k2Res.status, 'ok:', k2Res.ok);
+          console.log('[K2] Content-Type:', k2Res.headers.get('content-type'));
           const reader = k2Res.body.getReader();
           const decoder = new TextDecoder();
-          let buf = '', k2 = '';
+          let buf = '', k2 = '', chunkCount = 0;
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value);
+            if (done) { console.log('[K2] Stream done after', chunkCount, 'chunks'); break; }
+            chunkCount++;
+            const chunk = decoder.decode(value);
+            console.log('[K2] Chunk', chunkCount, ':', chunk.substring(0, 100));
+            buf += chunk;
             const lines = buf.split('\n'); buf = lines.pop();
             for (const line of lines) {
               if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
-                try { k2 += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''; } catch {}
+                try {
+                  const parsed = JSON.parse(line.slice(6));
+                  const content = parsed.choices?.[0]?.delta?.content || '';
+                  console.log('[K2] Parsed content:', content.substring(0, 80));
+                  k2 += content;
+                } catch (pe) { console.log('[K2] Parse error:', pe.message, 'line:', line.substring(0, 80)); }
               }
             }
           }
+          console.log('[K2] Final k2 text length:', k2.length, 'text:', k2.substring(0, 100));
           if (k2.trim()) {
             insight.textContent = savedText + '\n\n🤖 ' + k2.trim();
           } else {
+            console.log('[K2] Empty result, keeping original text');
             insight.textContent = savedText;
           }
-        }).catch(() => {
+        }).catch((err) => {
+          console.error('[K2] Fetch error:', err);
           insight.textContent = savedText;
         });
       }
