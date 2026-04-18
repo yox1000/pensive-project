@@ -131,7 +131,7 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `You are a medical scan assistant. Explain findings to patients in exactly 3 sentences. Sentence 1: what was measured. Sentence 2: whether it's normal. Sentence 3: recommend discussing with their doctor. No headers, no bullets. Plain language only.`;
+const SYSTEM_PROMPT = `Output ONLY a 3-sentence explanation for a patient. No roleplay, no meta-commentary, no "how's that", no thinking out loud. Just three plain sentences: what was found, if it's normal, and to see their doctor.`;
 
 // BiMediX2 running on local cluster via vLLM
 const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';
@@ -155,15 +155,21 @@ app.post('/api/analyze', async (req, res) => {
     const bimedixRes = await fetch(BIMEDIX_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, max_tokens: 300 }),
+      body: JSON.stringify({ messages, max_tokens: 100 }),
       signal: AbortSignal.timeout(30000),
     });
 
     if (bimedixRes.ok) {
       const data = await bimedixRes.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      // Send as SSE so frontend parser works
-      res.write('data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n');
+      let raw = data.choices?.[0]?.message?.content || '';
+      // BiMediX2 rambles. Extract max 3 useful sentences, strip meta-commentary.
+      const allSentences = raw.match(/[^.!?\n]+[.!?]+/g) || [];
+      const useful = allSentences.filter(s =>
+        !s.match(/here'?s|how'?s that|let me|keep in mind|remember you|you can|focus on|example|abbreviat|it is important to remember|should not hesitate|sensitive information|subject to interpretation|piece of the puzzle|active role|encouraged to/i)
+        && s.trim().length > 20
+      ).slice(0, 3);
+      const clean = useful.length > 0 ? useful.join(' ').trim() : allSentences.slice(0, 3).join(' ').trim();
+      res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean.slice(0, 400) } }] }) + '\n');
       res.write('data: [DONE]\n');
       res.end();
       return;
