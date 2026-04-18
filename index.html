@@ -429,7 +429,7 @@
 
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) model.scale.multiplyScalar(200 / maxDim);
+      if (maxDim > 0) model.scale.multiplyScalar(250 / maxDim);
 
       model.traverse(child => {
         if (child.isMesh) {
@@ -441,6 +441,14 @@
 
       scene.add(model);
       window._medlensModel = model;
+
+      // Fit camera to model
+      const scaledBox = new THREE.Box3().setFromObject(model);
+      const scaledSize = scaledBox.getSize(new THREE.Vector3());
+      const fitDist = Math.max(scaledSize.x, scaledSize.y, scaledSize.z) * 1.5;
+      camera.position.set(0, 0, fitDist);
+      controls.target.set(0, 0, 0);
+      controls.update();
     } catch (err) {
       console.error('Failed to load 3D model:', err);
     }
@@ -547,7 +555,7 @@
       if (s.description) statsHtml += '<br><span style="color:rgba(160,200,255,0.7);font-style:italic;">' + s.description + '</span>';
       stats.innerHTML = statsHtml;
     } else {
-      stats.innerHTML = 'Structure detected';
+      stats.innerHTML = '<span style="color:rgba(160,200,255,0.7);">' + displayName + ' detected in scan</span>';
     }
 
     // Position popup near click
@@ -634,8 +642,34 @@
       console.warn('Analysis fetch failed:', err);
     }
 
-    // Fallback: just show basic info
-    insight.textContent = displayName + ' detected in scan.';
+    // Fallback: ask AI about the structure directly
+    insight.textContent = 'Getting AI insight...';
+    try {
+      const k2Res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          medicalAnalysis: 'Structure: ' + displayName + ', Finding: detected in brain scan. Explain what this brain structure does in 3 sentences for a patient.'
+        }),
+      });
+      const reader = k2Res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '', txt = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value);
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
+            try { let c = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''; txt += c; } catch {}
+          }
+        }
+      }
+      insight.textContent = txt || displayName + ' detected in scan.';
+    } catch {
+      insight.textContent = displayName + ' detected in scan.';
+    }
     insight.className = '';
   }
 
