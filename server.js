@@ -2,12 +2,22 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 const SEG_API = 'https://ad340e2a00a48de0-66-180-180-8.serveousercontent.com';
 
 app.use(express.json());
+
+// Proxy /api/backend/* to the Python segmentation backend
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:9999';
+app.use('/api/backend', createProxyMiddleware({
+  target: BACKEND_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api/backend': '' },
+}));
+
 app.use(express.static(__dirname));
 app.use('/niivue', express.static(path.join(__dirname, 'node_modules/@niivue/niivue/dist')));
 
