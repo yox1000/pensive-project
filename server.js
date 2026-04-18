@@ -26,6 +26,32 @@ app.use(express.static(__dirname));
 app.use('/niivue', express.static(path.join(__dirname, 'node_modules/@niivue/niivue/dist')));
 
 // Upload scan → TotalSegmentator → return scan_id
+// Demo mode: synthetic brain segmentation (instant, perfect data)
+app.post('/api/segment/demo', upload.single('file'), async (req, res) => {
+  try {
+    const boundary = '----MedLens' + Date.now();
+    const filename = req.file.originalname || 'scan.nii.gz';
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+    const body = Buffer.concat([Buffer.from(header), req.file.buffer, Buffer.from(footer)]);
+
+    const response = await fetch(`${SEG_API_DIRECT}/segment/demo`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body,
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Demo segment error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/segment', upload.single('file'), async (req, res) => {
   try {
     // Build multipart form manually for Node fetch compatibility

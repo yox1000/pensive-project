@@ -168,6 +168,7 @@
     </svg>
     <span class="upload-label">Click to upload a brain scan</span>
     <span class="upload-sub">NIfTI (.nii, .nii.gz)</span>
+    <label style="font-size:0.75rem;color:rgba(120,200,255,0.7);cursor:pointer;margin-top:4px;"><input type="checkbox" id="demoMode" checked style="margin-right:4px;">Demo mode (instant brain analysis)</label>
     <span class="upload-status" id="uploadStatus">Processing scan...</span>
     <input type="file" id="fileInput" accept=".nii,.nii.gz" />
   </div>
@@ -254,9 +255,11 @@
     formData.append('file', file);
 
     try {
-      // 1. Segment
-      statusEl.textContent = 'Running AI segmentation (~30s)...';
-      const segRes = await fetch(`${BACKEND}/segment`, { method: 'POST', body: formData });
+      // 1. Segment (demo mode = instant synthetic brain, real mode = TotalSegmentator)
+      const isDemo = document.getElementById('demoMode')?.checked;
+      const segEndpoint = isDemo ? `${BACKEND}/segment/demo` : `${BACKEND}/segment`;
+      statusEl.textContent = isDemo ? 'Loading brain analysis...' : 'Running AI segmentation (~30s)...';
+      const segRes = await fetch(segEndpoint, { method: 'POST', body: formData });
       if (!segRes.ok) throw new Error(await segRes.text());
       structuresData = await segRes.json();
       currentScanId = structuresData.scan_id;
