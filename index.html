@@ -518,6 +518,7 @@
       const displayName = s.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       div.innerHTML = `<span>${displayName}</span><span class="structure-vol">${s.volume_ml} mL</span>`;
       div.addEventListener('click', (e) => {
+        console.log('[CLICK] Structure list item clicked:', s.name);
         document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
         div.classList.add('selected');
         highlightStructure(s.name);
@@ -547,6 +548,7 @@
 
   // --- Organ popup ---
   async function showOrganPopup(structureName, mouseX, mouseY) {
+    console.log('[POPUP] showOrganPopup called:', structureName, mouseX, mouseY);
     const popup = document.getElementById('organ-popup');
     const title = document.getElementById('popup-title');
     const stats = document.getElementById('popup-stats');
