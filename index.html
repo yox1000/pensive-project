@@ -311,7 +311,10 @@
 
       // 6. Show AR button
       document.getElementById('ar-view-btn').style.display = 'block';
-      document.getElementById('toggle-deep-btn').style.display = 'block';
+      const deepBtn = document.getElementById('toggle-deep-btn');
+      deepBtn.style.display = 'block';
+      deepBtn.textContent = scanMode === 'lung' ? 'Show Airways' : 'Hide Deep';
+      deepVisible = true;
 
     } catch (err) {
       statusEl.textContent = `Error: ${err.message}`;
@@ -913,18 +916,21 @@
   // Toggle deep brain structures visibility
   let deepVisible = true;
   const deepNames = ['thalamus', 'deep_gray', 'ventricles', 'brainstem', 'medulla', 'cerebellum'];
+  const lungOuterNames = ['upper_lobe', 'lower_lobe', 'middle_lobe', 'heart'];
   window.toggleDeepStructures = function() {
     deepVisible = !deepVisible;
     const btn = document.getElementById('toggle-deep-btn');
-    btn.textContent = deepVisible ? 'Hide Deep' : 'Show Deep';
+    const isLung = scanMode === 'lung';
+    btn.textContent = deepVisible ? (isLung ? 'Show Airways' : 'Hide Deep') : (isLung ? 'Show Lobes' : 'Show Deep');
     btn.style.background = deepVisible ? 'rgba(180,80,255,0.15)' : 'rgba(80,255,180,0.15)';
     btn.style.borderColor = deepVisible ? 'rgba(180,80,255,0.4)' : 'rgba(80,255,180,0.4)';
     if (window._medlensModel) {
+      const hideList = isLung ? lungOuterNames : deepNames;
       window._medlensModel.traverse(child => {
         if (child.isMesh) {
           const n = (child.name || '').toLowerCase();
-          const isDeep = deepNames.some(d => n.includes(d));
-          if (isDeep) child.visible = deepVisible;
+          const shouldToggle = hideList.some(d => n.includes(d));
+          if (shouldToggle) child.visible = !deepVisible;
         }
       });
     }
@@ -1525,12 +1531,14 @@
   window.toggleARDeep = function() {
     arDeepVisible = !arDeepVisible;
     const btn = document.getElementById('ar-deep-btn');
-    btn.textContent = arDeepVisible ? 'Hide Deep' : 'Show Deep';
+    const isLung = scanMode === 'lung';
+    btn.textContent = arDeepVisible ? (isLung ? 'Show Airways' : 'Hide Deep') : (isLung ? 'Show Lobes' : 'Show Deep');
     if (window._arModel) {
+      const hideList = isLung ? lungOuterNames : deepNames;
       window._arModel.traverse(child => {
         if (child.isMesh) {
           const n = (child.name || '').toLowerCase();
-          if (deepNames.some(d => n.includes(d))) child.visible = arDeepVisible;
+          if (hideList.some(d => n.includes(d))) child.visible = !arDeepVisible;
         }
       });
     }
