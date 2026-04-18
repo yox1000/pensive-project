@@ -105,38 +105,85 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `You are a medical communication assistant. You receive clinical analysis of a medical scan and rewrite it for a patient with no medical background. Be clear, calm, honest. Never diagnose. Always recommend consulting a doctor.
+const SYSTEM_PROMPT = `You are a medical imaging assistant. Given clinical findings from a scan segmentation, provide a clear, calm, patient-friendly explanation. Never diagnose. Recommend consulting a doctor. Be concise: 3-5 sentences of flowing text. No headers, no bullets, no reasoning.`;
 
-IMPORTANT: Do NOT include any thinking, reasoning, or internal monologue. Output ONLY the patient-facing text. Be concise: 4-6 sentences maximum. No headers, no bullet points, just flowing text a patient can read.`;
+// BiMediX2 running on local cluster via vLLM
+const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';
+const BIMEDIX_MODEL = process.env.BIMEDIX_MODEL || 'BiMediX2-8B-hf';
 
-// Send structure data to K2, stream patient-friendly response
+// Send structure data to BiMediX2 (cluster) with K2 fallback, stream response
 app.post('/api/analyze', async (req, res) => {
   const { medicalAnalysis } = req.body;
   if (!medicalAnalysis) return res.status(400).json({ error: 'medicalAnalysis is required' });
 
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: `Here is the clinical analysis of the uploaded scan:\n\n${medicalAnalysis}\n\nTranslate this into a patient-friendly explanation.` },
+    { role: 'user', content: medicalAnalysis },
   ];
-
-  const response = await fetch(process.env.K2_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.K2_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true }),
-  });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
 
+  // Try BiMediX2 first (local cluster), fallback to K2 cloud
+  let response;
+  let usedModel = 'bimedix2';
+  try {
+    response = await fetch(BIMEDIX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: BIMEDIX_MODEL, messages, stream: true, max_tokens: 512 }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('BiMediX2 not ready');
+  } catch (err) {
+    console.log('BiMediX2 unavailable, falling back to K2:', err.message);
+    usedModel = 'k2';
+    response = await fetch(process.env.K2_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.K2_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true }),
+    });
+  }
+
+  // Stream response, filtering think blocks
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let inThink = false;
+  let buffer = '';
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    res.write(decoder.decode(value));
+    buffer += decoder.decode(value);
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) { res.write(line + '\n'); continue; }
+      const data = line.slice(6);
+      if (data === '[DONE]') { res.write(line + '\n'); continue; }
+      try {
+        const parsed = JSON.parse(data);
+        let content = parsed.choices?.[0]?.delta?.content || '';
+        // Filter <think> blocks (K2 reasoning)
+        if (content.includes('<think>')) inThink = true;
+        if (inThink) {
+          if (content.includes('</think>')) {
+            content = content.split('</think>').pop();
+            inThink = false;
+          } else { content = ''; }
+        }
+        if (content) {
+          parsed.choices[0].delta.content = content;
+          res.write('data: ' + JSON.stringify(parsed) + '\n');
+        }
+      } catch {
+        res.write(line + '\n');
+      }
+    }
   }
   res.end();
 });
