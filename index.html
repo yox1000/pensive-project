@@ -170,7 +170,7 @@
       <path d="M24 34c0-6.627 5.373-10 12-10s12 3.373 12 10c0 2-.5 4-1.5 5.5C48 42 48 44 46 46c-1 1-2.5 1.5-4 1l-1 3h-10l-1-3c-1.5.5-3 0-4-1-2-2-2-4-.5-6.5C24.5 38 24 36 24 34Z"
             stroke="rgba(120,200,255,0.85)" stroke-width="1.5" fill="rgba(80,140,255,0.08)"/>
     </svg>
-    <span class="upload-label">Click to upload a brain scan</span>
+    <span class="upload-label">Click to upload a medical scan</span>
     <span class="upload-sub">NIfTI (.nii, .nii.gz)</span>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button id="modeBrain" onclick="event.stopPropagation();setMode('brain')" style="padding:6px 14px;background:rgba(80,180,255,0.3);border:1px solid rgba(80,180,255,0.5);color:rgba(180,220,255,0.9);border-radius:6px;cursor:pointer;font-size:0.75rem;">Brain</button>
@@ -231,12 +231,12 @@
 
   window.setMode = function(mode) {
     scanMode = mode;
-    ['modeBrain', 'modeLung', 'modeLeg', 'modeTorso'].forEach(id => {
+    ['modeBrain', 'modeLung', 'modeLeg'].forEach(id => {
       const btn = document.getElementById(id);
       const isActive = (id === 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1)) ||
                        (id === 'modeBrain' && mode === 'brain') ||
                        (id === 'modeLung' && mode === 'lung') ||
-                       (id === 'modeTorso' && mode === 'torso');
+                       (id === 'modeLeg' && mode === 'leg');
       btn.style.background = isActive ? 'rgba(80,180,255,0.3)' : 'rgba(80,180,255,0.08)';
       btn.style.borderColor = isActive ? 'rgba(80,180,255,0.5)' : 'rgba(80,180,255,0.2)';
       btn.style.color = isActive ? 'rgba(180,220,255,0.9)' : 'rgba(120,160,220,0.6)';
@@ -285,7 +285,8 @@
     try {
       // 1. Segment (demo mode = instant synthetic brain, real mode = TotalSegmentator)
       const segEndpoint = `${BACKEND}/segment/demo?mode=${scanMode}`;
-      statusEl.textContent = scanMode === 'brain' ? 'Analyzing brain scan...' : 'Analyzing full body scan...';
+      const modeLabels = { brain: 'Analyzing brain scan...', lung: 'Analyzing lung scan...', leg: 'Analyzing leg scan...' };
+      statusEl.textContent = modeLabels[scanMode] || 'Analyzing scan...';
       const segRes = await fetch(segEndpoint, { method: 'POST', body: formData });
       if (!segRes.ok) throw new Error(await segRes.text());
       structuresData = await segRes.json();
@@ -811,7 +812,8 @@
         const matchedName = s.name.replace(/_/g, ' ');
         const isSubRegion = displayName.toLowerCase() !== matchedName;
         const regionNote = isSubRegion ? ` (part of the ${matchedName}, total lobe volume ${vol} mL)` : `, volume ${vol} mL`;
-        const prompt = `Full brain scan — all structures: ${allStructures}. The patient is asking specifically about their ${displayName}${regionNote}, status: ${status}. Considering how all brain structures relate to each other, write exactly 2 sentences explaining: 1) whether this structure is normal or concerning given the overall brain health 2) what the patient should do. Start with "Your" directly.`;
+        const bodyContext = scanMode === 'lung' ? 'respiratory system' : scanMode === 'leg' ? 'musculoskeletal system' : 'brain';
+        const prompt = `Scan — all structures: ${allStructures}. Patient asks about ${displayName}${regionNote}, status: ${status}. Considering the overall ${bodyContext}, write 2 sentences: 1) whether this is normal or concerning 2) what the patient should do. Start with "Your".`;
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
@@ -888,7 +890,8 @@
 
       // Also get K2 personalized insight for unknown structures
       const allStructures = structuresData.structures.map(st => st.name.replace(/_/g,' ') + ': ' + st.volume_ml + ' mL').join(', ');
-      const unknownPrompt = `Full scan: ${allStructures}. Patient clicked on: ${displayName}. In 2 sentences, explain what this structure's appearance means for this patient's overall brain health. No reasoning.`;
+      const bodyPart = scanMode === 'lung' ? 'respiratory' : scanMode === 'leg' ? 'musculoskeletal' : 'brain';
+      const unknownPrompt = `Scan data: ${allStructures}. Patient clicked on: ${displayName}. In 2 sentences, explain what this structure means for the patient's ${bodyPart} health. No reasoning.`;
       console.log('[K2] Calling for unknown structure:', displayName);
       insight.textContent = matched + '\n\n⏳ Generating personalized assessment...';
       fetch('/api/analyze', {
