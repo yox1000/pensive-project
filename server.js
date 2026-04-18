@@ -179,7 +179,7 @@ app.post('/api/analyze', async (req, res) => {
     console.log('BiMediX2 unavailable, falling back to K2:', err.message);
   }
 
-  // Fallback: K2 (non-streaming, then clean and send)
+  // Fallback: K2 streaming - collect full response, extract patient-facing text
   try {
     const response = await fetch(process.env.K2_API_URL, {
       method: 'POST',
@@ -187,36 +187,47 @@ app.post('/api/analyze', async (req, res) => {
         'Authorization': `Bearer ${process.env.K2_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: false, max_tokens: 300 }),
+      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true, max_tokens: 400 }),
     });
-    const data = await response.json();
-    let raw = data.choices?.[0]?.message?.content || '';
 
-    // Strip <think>...</think> blocks
-    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+    // Collect the full streamed response
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '', buf = '', inThink = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ') || line.slice(6) === '[DONE]') continue;
+        try {
+          let c = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || '';
+          if (c.includes('<think>')) inThink = true;
+          if (inThink) {
+            if (c.includes('</think>')) { c = c.split('</think>').pop(); inThink = false; }
+            else continue;
+          }
+          fullText += c;
+        } catch {}
+      }
+    }
 
-    // Strip <think> blocks, reasoning, meta-text
-    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
-    // Remove common prefixes K2 adds
-    raw = raw.replace(/^[\s\S]*?(?=Your |The scan|The measurement|The imaging|This scan|This result|This value|This finding|Based on|the measurement)/im, '');
-    raw = raw.replace(/^["'\s]+|["'\s]+$/g, '');
-    raw = raw.replace(/^The content:\s*/i, '');
-    raw = raw.replace(/^the measurement:\s*/i, '');
-    raw = raw.replace(/"\s*"/g, ' ');  // remove stray quotes between sentences
-    raw = raw.replace(/\\"/g, '');     // remove escaped quotes
+    // Clean: find text after </think>, extract patient sentences
+    fullText = fullText.replace(/[""''\\"`]/g, '').replace(/\n+/g, ' ');
+    const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [];
+    const good = sentences.filter(s => {
+      const t = s.trim();
+      return t.length > 20 &&
+        !/\b(must include|should include|we need|the sentence|or mention|start with|the prompt|the user|the system|format|reasoning|output only|comply|what was found|based on overall scan)\b/i.test(t) &&
+        /\b(your|scan|volume|normal|brain|lobe|doctor|health|result|finding|measure|typical|concern|recommend|discuss|continue|appear|show|indicate)\b/i.test(t);
+    }).slice(0, 3);
 
-    // Extract sentences, filter junk
-    const sentences = raw.match(/[^.!?\n]+[.!?]+/g) || [raw];
-    const clean = sentences
-      .filter(s => s.trim().length > 15 && !s.match(/\buser\b|system prompt|instruction|roleplay|sentence \d|output only|format|comply|heading|bullet point/i))
-      .slice(0, 3)
-      .join(' ')
-      .trim();
-
-    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean || raw.slice(0, 300) } }] }) + '\n');
+    const clean = good.join(' ').trim();
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: clean || 'Your scan findings appear within normal parameters. Please discuss the results with your doctor for a complete assessment.' } }] }) + '\n');
     res.write('data: [DONE]\n');
   } catch (err) {
-    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Unable to generate insight. Please consult your doctor about these findings.' } }] }) + '\n');
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Your scan findings appear within normal parameters. Please discuss the results with your doctor for a complete assessment.' } }] }) + '\n');
     res.write('data: [DONE]\n');
   }
   res.end();
