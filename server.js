@@ -6,7 +6,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
-const SEG_API = 'https://ad340e2a00a48de0-66-180-180-8.serveousercontent.com';
+const SEG_API = process.env.BACKEND_URL || 'http://localhost:9999';
 
 app.use(express.json());
 
@@ -16,6 +16,8 @@ app.use('/api/backend', createProxyMiddleware({
   target: BACKEND_URL,
   changeOrigin: true,
   pathRewrite: { '^/api/backend': '' },
+  timeout: 600000,
+  proxyTimeout: 600000,
 }));
 
 app.use(express.static(__dirname));
