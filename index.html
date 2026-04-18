@@ -1173,15 +1173,15 @@
             if (pointingTimer) { clearTimeout(pointingTimer); pointingTimer = null; }
             pointingAt = null;
             if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
-            if (prevPalmY !== null) {
-              const dy = prevPalmY - lm[9].y;
-              arScale = Math.max(0.1, Math.min(5, arScale + dy * 2));
+            if (prevPalmX !== null) {
+              const dx = lm[12].x - prevPalmX; // middle finger tip X: right = scale up
+              arScale = Math.max(0.1, Math.min(5, arScale + dx * 2));
               arModel.scale.setScalar(arScale * baseScale);
               indicator.style.display = 'block';
               indicator.textContent = '✋ Scale: ' + arScale.toFixed(2) + 'x';
             }
-            prevPalmY = lm[9].y;
-            prevPalmX = null;
+            prevPalmX = lm[12].x;
+            prevPalmY = null;
 
           // --- ROTATE ---
           } else if (activeGesture === 'rotate') {
