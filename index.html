@@ -538,14 +538,45 @@
   function highlightStructure(name) {
     if (!window._medlensModel || !window.THREE) return;
     const THREE = window.THREE;
+    const lower = name.toLowerCase().replace(/_/g, ' ');
+
+    // Map synthetic names to keywords for fuzzy matching 3D mesh nodes
+    const keywordMap = {
+      'frontal_lobe': 'frontal',
+      'parietal_lobe': 'parietal',
+      'temporal_lobe': 'temporal',
+      'occipital_lobe': 'occipital',
+      'cerebellum': 'cerebellum',
+      'brainstem': 'brainstem',
+      'thalamus': 'thalamus',
+      'caudate_nucleus': 'caudate',
+      'lentiform_nucleus': 'lentiform',
+      'ventricle': 'ventricle',
+      'insular_cortex': 'insul',
+      'internal_capsule': 'capsule',
+      'brain': 'brain',
+      'skull': 'skull',
+      // Torso
+      'liver': 'liver', 'heart': 'heart', 'spleen': 'spleen',
+      'kidney_right': 'kidney', 'kidney_left': 'kidney',
+      'stomach': 'stomach', 'pancreas': 'pancreas',
+      'lung_upper_lobe_left': 'lung', 'lung_lower_lobe_left': 'lung',
+      'lung_upper_lobe_right': 'lung', 'lung_middle_lobe_right': 'lung',
+      'lung_lower_lobe_right': 'lung', 'aorta': 'aorta',
+    };
+
+    const keyword = keywordMap[name] || lower;
+
     window._medlensModel.traverse(child => {
       if (child.isMesh) {
-        if (child.name === name) {
+        const childLower = child.name.toLowerCase();
+        const isMatch = child.name === name || childLower.includes(keyword);
+        if (isMatch) {
           child.material.opacity = 1.0;
           child.material.emissive = new THREE.Color(0x3388ff);
           child.material.emissiveIntensity = 0.3;
         } else {
-          child.material.opacity = 0.3;
+          child.material.opacity = 0.25;
           child.material.emissive = new THREE.Color(0x000000);
           child.material.emissiveIntensity = 0;
         }
