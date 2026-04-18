@@ -637,10 +637,13 @@
     };
 
     if (s) {
-      // Use richer pre-written insight, avoid duplicating what's already in stats
+      // Use richer pre-written insight - try both the clicked name AND the matched synthetic name
       const infoKey = structureName.toLowerCase();
-      const richText = brainInfo[infoKey] || organInfo[infoKey];
-      let text = richText || s.description || displayName + ' detected in scan.';
+      const matchedKey = s.name.toLowerCase();
+      const richText = brainInfo[infoKey] || brainInfo[matchedKey] || organInfo[infoKey] || organInfo[matchedKey];
+      let text = richText || '';
+      // Don't repeat the description if it's already in stats or same as richText
+      if (!text && s.description) text = s.description;
 
       // Add volume assessment
       try {
@@ -679,7 +682,7 @@
         const matchedName = s.name.replace(/_/g, ' ');
         const isSubRegion = displayName.toLowerCase() !== matchedName;
         const regionNote = isSubRegion ? ` (part of the ${matchedName}, total lobe volume ${vol} mL)` : `, volume ${vol} mL`;
-        const prompt = `Scan results: ${allStructures}. Patient selected: ${displayName}${regionNote}${range ? ', normal range: ' + range + ' mL' : ''}, status: ${status}. In 2 sentences: what does this mean for the patient, and should they be concerned. Direct answer only.`;
+        const prompt = `Brain scan: ${allStructures}. Patient asks about ${displayName}${regionNote}. Status: ${status}. Write exactly 2 sentences: 1) whether this is normal or concerning 2) what the patient should do. Start with "Your" directly.`;
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
