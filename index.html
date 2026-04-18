@@ -930,8 +930,10 @@
       <video id="ar-video" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;"></video>
       <canvas id="ar-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;"></canvas>
       <div style="position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:8px;">
+        <button id="ar-mic-btn" onclick="toggleARVoice()" style="padding:8px 16px;background:rgba(80,180,255,0.2);border:1px solid rgba(80,180,255,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">🎙 Ask</button>
         <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
+      <div id="ar-voice-status" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(10,12,40,0.9);border:1px solid rgba(80,180,255,0.3);border-radius:12px;padding:10px 18px;color:#e0e8ff;font-size:0.8rem;text-align:center;max-width:400px;"></div>
       <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
       <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
       <div id="ar-label" style="display:none;position:absolute;z-index:20;max-width:300px;background:rgba(10,12,40,0.92);backdrop-filter:blur(12px);border:1px solid rgba(80,180,255,0.35);border-radius:10px;padding:10px 14px;color:#e0e8ff;font-size:0.78rem;line-height:1.5;pointer-events:none;"></div>
@@ -1286,6 +1288,86 @@
         console.warn('Hand tracking unavailable:', err.message);
       }
     })();
+  };
+
+  // Build scan context string for voice queries
+  function buildScanContext() {
+    if (!structuresData?.structures) return '';
+    return structuresData.structures
+      .map(s => `${s.name.replace(/_/g,' ')}: ${s.volume_ml}mL`)
+      .join(', ');
+  }
+
+  let _arRecognition = null;
+  window.toggleARVoice = function() {
+    const btn = document.getElementById('ar-mic-btn');
+    const status = document.getElementById('ar-voice-status');
+
+    if (_arRecognition) {
+      _arRecognition.stop();
+      _arRecognition = null;
+      btn.textContent = '🎙 Ask';
+      btn.style.background = 'rgba(80,180,255,0.2)';
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      status.textContent = 'Speech recognition not supported in this browser.';
+      status.style.display = 'block';
+      return;
+    }
+
+    _arRecognition = new SpeechRecognition();
+    _arRecognition.lang = 'en-US';
+    _arRecognition.interimResults = false;
+    _arRecognition.maxAlternatives = 1;
+
+    btn.textContent = '⏹ Stop';
+    btn.style.background = 'rgba(255,80,80,0.5)';
+    status.textContent = '🎙 Listening...';
+    status.style.display = 'block';
+
+    _arRecognition.onresult = async (e) => {
+      const question = e.results[0][0].transcript;
+      status.textContent = `You: "${question}"\n⏳ Thinking...`;
+      _arRecognition = null;
+      btn.textContent = '🎙 Ask';
+      btn.style.background = 'rgba(80,180,255,0.2)';
+
+      try {
+        const res = await fetch('/api/voice-query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, scanContext: buildScanContext() }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+
+        const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
+        status.textContent = `You: "${question}"\n🤖 ${answerText}`;
+
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+        audio.play();
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+      }
+    };
+
+    _arRecognition.onerror = (e) => {
+      status.textContent = `Mic error: ${e.error}`;
+      _arRecognition = null;
+      btn.textContent = '🎙 Ask';
+      btn.style.background = 'rgba(80,180,255,0.2)';
+    };
+
+    _arRecognition.onend = () => {
+      if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; }
+    };
+
+    _arRecognition.start();
   };
 
   window.closeMarkerAR = function() {

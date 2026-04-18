@@ -245,5 +245,58 @@ app.post('/api/analyze', async (req, res) => {
   res.end();
 });
 
+// Voice Q&A: STT (browser) → K2 → ElevenLabs TTS → audio back to client
+const { textToSpeech } = require('./elevenlabs/tts');
+
+const VOICE_SYSTEM_PROMPT = `You are a medical AI assistant helping a patient understand their brain scan in AR.
+Answer in 1-2 plain spoken sentences. No bullet points, no markdown, no medical jargon.
+Be warm, clear, and concise — this will be spoken aloud.`;
+
+app.post('/api/voice-query', async (req, res) => {
+  const { question, scanContext } = req.body;
+  if (!question) return res.status(400).json({ error: 'question is required' });
+
+  try {
+    // Build K2 prompt with full scan context
+    const userMessage = scanContext
+      ? `Brain scan data: ${scanContext}\n\nPatient question: ${question}`
+      : question;
+
+    const k2Res = await fetch(process.env.K2_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.K2_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: process.env.K2_MODEL,
+        messages: [
+          { role: 'system', content: VOICE_SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
+        stream: false,
+        max_tokens: 150,
+      }),
+    });
+
+    if (!k2Res.ok) throw new Error(`K2 error: ${await k2Res.text()}`);
+    const k2Data = await k2Res.json();
+    let answer = k2Data.choices?.[0]?.message?.content || '';
+    // Strip think blocks
+    answer = answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (!answer) throw new Error('Empty K2 response');
+
+    // Convert to speech via ElevenLabs
+    const audioBuffer = await textToSpeech(answer);
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('X-Answer-Text', encodeURIComponent(answer)); // send text too for display
+    res.send(Buffer.from(audioBuffer));
+  } catch (err) {
+    console.error('Voice query error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Running at http://localhost:${PORT}`));
