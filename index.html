@@ -169,8 +169,8 @@
     <span class="upload-label">Click to upload a brain scan</span>
     <span class="upload-sub">NIfTI (.nii, .nii.gz)</span>
     <div style="display:flex;gap:8px;margin-top:8px;">
-      <button id="modeBrain" onclick="setMode('brain')" style="padding:6px 14px;background:rgba(80,180,255,0.3);border:1px solid rgba(80,180,255,0.5);color:rgba(180,220,255,0.9);border-radius:6px;cursor:pointer;font-size:0.75rem;">Brain</button>
-      <button id="modeTorso" onclick="setMode('torso')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Full Body</button>
+      <button id="modeBrain" onclick="event.stopPropagation();setMode('brain')" style="padding:6px 14px;background:rgba(80,180,255,0.3);border:1px solid rgba(80,180,255,0.5);color:rgba(180,220,255,0.9);border-radius:6px;cursor:pointer;font-size:0.75rem;">Brain</button>
+      <button id="modeTorso" onclick="event.stopPropagation();setMode('torso')" style="padding:6px 14px;background:rgba(80,180,255,0.08);border:1px solid rgba(80,180,255,0.2);color:rgba(120,160,220,0.6);border-radius:6px;cursor:pointer;font-size:0.75rem;">Full Body</button>
     </div>
     <span class="upload-status" id="uploadStatus">Processing scan...</span>
     <input type="file" id="fileInput" accept=".nii,.nii.gz" />
