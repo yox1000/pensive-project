@@ -554,8 +554,22 @@
     const stats = document.getElementById('popup-stats');
     const insight = document.getElementById('popup-insight');
 
-    // Find structure data
-    const s = structuresData?.structures?.find(st => st.name === structureName);
+    // Find structure data - try exact match first, then fuzzy match by keywords
+    let s = structuresData?.structures?.find(st => st.name === structureName);
+    if (!s) {
+      const lower = structureName.toLowerCase();
+      s = structuresData?.structures?.find(st => {
+        const n = st.name.toLowerCase();
+        return lower.includes(n) || n.includes(lower) ||
+          (lower.includes('frontal') && n === 'frontal_lobe') ||
+          (lower.includes('parietal') && n === 'parietal_lobe') ||
+          (lower.includes('temporal') && n === 'temporal_lobe') ||
+          (lower.includes('occipital') && n === 'occipital_lobe') ||
+          (lower.includes('cerebellum') && n === 'cerebellum') ||
+          (lower.includes('brain') && n === 'brain');
+      });
+    }
+    console.log('[POPUP] Structure match:', s ? s.name : 'none', 'for', structureName);
     const displayName = structureName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
     title.textContent = displayName;
@@ -737,6 +751,36 @@
         else matched = 'This brain structure was identified in your scan. It is part of the complex network of regions that work together for normal brain function. Your doctor can explain its significance in the context of your health.';
       }
       insight.textContent = matched;
+
+      // Also get K2 personalized insight for unknown structures
+      const allStructures = structuresData.structures.map(st => st.name.replace(/_/g,' ') + ': ' + st.volume_ml + ' mL').join(', ');
+      const unknownPrompt = `Full scan: ${allStructures}. Patient clicked on: ${displayName}. In 2 sentences, explain what this structure's appearance means for this patient's overall brain health. No reasoning.`;
+      console.log('[K2] Calling for unknown structure:', displayName);
+      insight.textContent = matched + '\n\n⏳ Generating personalized assessment...';
+      fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ medicalAnalysis: unknownPrompt }),
+      }).then(async (r) => {
+        console.log('[K2] Unknown struct response:', r.status);
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '', k2 = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value);
+          const lines = buf.split('\n'); buf = lines.pop();
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
+              try { k2 += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''; } catch {}
+            }
+          }
+        }
+        console.log('[K2] Unknown struct result:', k2.substring(0, 100));
+        if (k2.trim()) insight.textContent = matched + '\n\n🤖 ' + k2.trim();
+        else insight.textContent = matched;
+      }).catch(e => { console.error('[K2] Unknown struct error:', e); insight.textContent = matched; });
     }
   }
 
