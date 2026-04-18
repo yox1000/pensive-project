@@ -333,8 +333,16 @@
     const ARButton = window.ARButton;
 
     const container = document.getElementById('threejs-panel');
-    const w = container.clientWidth;
-    const h = container.clientHeight;
+    // Wait for layout to settle
+    await new Promise(r => setTimeout(r, 200));
+    let w = container.clientWidth;
+    let h = container.clientHeight;
+    if (w === 0 || h === 0) {
+      await new Promise(r => setTimeout(r, 500));
+      w = container.clientWidth || 600;
+      h = container.clientHeight || 400;
+    }
+    console.log('Three.js container:', w, 'x', h);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x080818);
@@ -417,10 +425,14 @@
 
     // Load GLB
     const loader = new GLTFLoader();
+    console.log('Loading GLB from:', `${BACKEND}/mesh/${scanId}`);
     try {
       const gltf = await new Promise((resolve, reject) => {
-        loader.load(`${BACKEND}/mesh/${scanId}`, resolve, undefined, reject);
+        loader.load(`${BACKEND}/mesh/${scanId}`, resolve,
+          (progress) => { if (progress.total) console.log('GLB progress:', Math.round(progress.loaded/progress.total*100) + '%'); },
+          reject);
       });
+      console.log('GLB loaded, scene children:', gltf.scene.children.length);
 
       const model = gltf.scene;
       const box3 = new THREE.Box3().setFromObject(model);
