@@ -1021,23 +1021,28 @@
           return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
         }
 
+        // Use PIP joints (mid-knuckle) for strong extended/curled discrimination
+        // tip > pip.y = curled, tip < pip.y = extended (screen Y: 0=top, 1=bottom)
+        // Landmarks: index tip=8 pip=6, middle tip=12 pip=10, ring tip=16 pip=14, pinky tip=20 pip=18
+
         function isPointing(lm) {
-          const indexExtended = lm[5].y - lm[8].y > 0.04;
-          const middleCurled = lm[12].y - lm[9].y > -0.02;
-          const ringCurled = lm[16].y - lm[13].y > -0.02;
-          return indexExtended && middleCurled && ringCurled;
+          const indexExtended = lm[6].y - lm[8].y > 0.04; // index tip well above its PIP
+          const middleCurled  = lm[12].y > lm[10].y;      // middle tip below its PIP
+          const ringCurled    = lm[16].y > lm[14].y;      // ring tip below its PIP
+          const pinkyCurled   = lm[20].y > lm[18].y;      // pinky tip below its PIP
+          return indexExtended && middleCurled && ringCurled && pinkyCurled;
         }
 
         function isOpenPalm(lm) {
-          // All 4 fingers extended (tips above MCPs)
-          const fingers = [[8,5],[12,9],[16,13],[20,17]];
-          return fingers.every(([tip, mcp]) => lm[mcp].y - lm[tip].y > 0.04);
+          // All 4 finger tips clearly above their PIP joints
+          const fingers = [[8,6],[12,10],[16,14],[20,18]];
+          return fingers.every(([tip, pip]) => lm[pip].y - lm[tip].y > 0.04);
         }
 
         function isFist(lm) {
-          // All 4 fingers curled (tips below MCPs)
-          const fingers = [[8,5],[12,9],[16,13],[20,17]];
-          return fingers.every(([tip, mcp]) => lm[tip].y - lm[mcp].y > 0.02);
+          // All 4 finger tips below their PIP joints
+          const fingers = [[8,6],[12,10],[16,14],[20,18]];
+          return fingers.every(([tip, pip]) => lm[tip].y > lm[pip].y);
         }
 
         function raycastFromFinger(indexTip) {
