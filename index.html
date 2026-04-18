@@ -641,6 +641,45 @@
       } catch {}
 
       insight.textContent = text;
+
+      // Now get personalized K2 insight about their specific data
+      if (s) {
+        const finding_data = await (async () => {
+          try {
+            const r = await fetch(BACKEND + '/analyze/' + currentScanId);
+            if (r.ok) { const a = await r.json(); return a.findings?.find(f => f.name === structureName); }
+          } catch {} return null;
+        })();
+
+        const vol = s.volume_ml;
+        const range = finding_data?.normal_range_ml || '';
+        const status = finding_data?.status?.replace(/_/g, ' ') || 'detected';
+        const prompt = `Patient scan result: ${displayName} volume is ${vol} mL${range ? ' (normal: ' + range + ' mL)' : ''}. Status: ${status}. Give a 2-sentence personalized assessment for this patient. First sentence: state their specific measurement and whether it is concerning. Second sentence: one specific recommendation. No reasoning, no meta-text.`;
+
+        insight.textContent += '\n\nGenerating personalized assessment...';
+        try {
+          const k2Res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ medicalAnalysis: prompt }),
+          });
+          const reader = k2Res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '', k2 = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value);
+            const lines = buf.split('\n'); buf = lines.pop();
+            for (const line of lines) {
+              if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
+                try { k2 += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''; } catch {}
+              }
+            }
+          }
+          if (k2.trim()) insight.textContent = text + '\n\n' + k2.trim();
+        } catch {}
+      }
     } else {
       // Unknown structure from 3D mesh (Synovia brain regions)
       const cleanName = structureName.toLowerCase().replace(/[^a-z_]/g, '').replace(/ /g, '_');
