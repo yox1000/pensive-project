@@ -355,7 +355,7 @@
     scene.background = new THREE.Color(0x080818);
 
     const camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 2000);
-    camera.position.set(0, 0, 180);
+    camera.position.set(0, 0, 3.6);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
@@ -448,8 +448,7 @@
 
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) model.scale.multiplyScalar(300 / maxDim);
-
+      // Don't scale - use original mm coordinates, position camera to match
       model.traverse(child => {
         if (child.isMesh) {
           child.material.transparent = true;
@@ -461,7 +460,14 @@
       scene.add(model);
       window._medlensModel = model;
 
-      camera.position.set(0, 0, 180);
+      // Position camera based on actual model size
+      camera.position.set(0, 0, maxDim * 0.55);
+      camera.far = maxDim * 5;
+      camera.updateProjectionMatrix();
+      // Move lights to match model scale
+      scene.children.forEach(c => {
+        if (c.isDirectionalLight) c.position.multiplyScalar(maxDim / 100);
+      });
       controls.target.set(0, 0, 0);
       controls.update();
     } catch (err) {
@@ -581,17 +587,41 @@
         const isMatch = child.name === name || childLower.includes(keyword);
         if (isMatch) matchCount++;
 
-        // Simple approach: show matching, hide non-matching
-        child.visible = isMatch;
+        // Clone material once so changes don't affect shared materials
+        if (!child._matCloned) {
+          child.material = child.material.clone();
+          child.material.transparent = true;
+          child.material.side = THREE.DoubleSide;
+          child._matCloned = true;
+        }
+        // Keep visible, change opacity (avoids model jumping when bounding box shrinks)
+        child.visible = true;
+        if (isMatch) {
+          child.material.opacity = 1.0;
+          child.material.emissive = new THREE.Color(0x2288ff);
+          child.material.emissiveIntensity = 0.6;
+        } else {
+          child.material.opacity = 0.06;
+          child.material.emissive = new THREE.Color(0x000000);
+          child.material.emissiveIntensity = 0;
+        }
+        child.material.needsUpdate = true;
       }
     });
 
-    // If nothing matched, show everything (this structure is internal/not in surface mesh)
+    // If nothing matched, reset all to default
     if (matchCount === 0) {
-      window._medlensModel.traverse(child => { if (child.isMesh) child.visible = true; });
+      window._medlensModel.traverse(child => {
+        if (child.isMesh && child._matCloned) {
+          child.material.opacity = 0.7;
+          child.material.emissive = new THREE.Color(0x000000);
+          child.material.emissiveIntensity = 0;
+          child.material.needsUpdate = true;
+        }
+      });
     }
 
-    // Show reset button if something is highlighted
+    // Show reset button
     let resetBtn = document.getElementById('reset-highlight-btn');
     if (!resetBtn) {
       resetBtn = document.createElement('button');
@@ -599,7 +629,14 @@
       resetBtn.textContent = 'Show All';
       resetBtn.style.cssText = 'position:absolute;top:36px;right:12px;z-index:10;padding:4px 12px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.3);color:rgba(180,220,255,0.8);border-radius:6px;cursor:pointer;font-size:0.7rem;';
       resetBtn.onclick = () => {
-        window._medlensModel.traverse(child => { if (child.isMesh) child.visible = true; });
+        window._medlensModel.traverse(child => {
+          if (child.isMesh && child._matCloned) {
+            child.material.opacity = 0.7;
+            child.material.emissive = new THREE.Color(0x000000);
+            child.material.emissiveIntensity = 0;
+            child.material.needsUpdate = true;
+          }
+        });
         resetBtn.style.display = 'none';
       };
       document.getElementById('threejs-panel').appendChild(resetBtn);
