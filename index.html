@@ -1266,10 +1266,26 @@
               if (pointingAt !== hitName) {
                 pointingAt = hitName;
                 // Show floating label inside AR overlay near finger tip
-                const s = structuresData?.structures?.find(st => st.name === hitName);
+                // Fuzzy match like the main viewer
+                let s = structuresData?.structures?.find(st => st.name === hitName);
+                if (!s) {
+                  const hl = hitName.toLowerCase();
+                  s = structuresData?.structures?.find(st => {
+                    const n = st.name.toLowerCase();
+                    return hl.includes(n) || n.includes(hl) ||
+                      (hl.includes('frontal') && n === 'frontal_lobe') ||
+                      (hl.includes('parietal') && n === 'parietal_lobe') ||
+                      (hl.includes('temporal') && n === 'temporal_lobe') ||
+                      (hl.includes('occipital') && n === 'occipital_lobe') ||
+                      (hl.includes('cerebellum') && n === 'cerebellum');
+                  });
+                }
                 const displayName = hitName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                 let labelHtml = `<strong style="color:rgba(120,200,255,0.95)">${displayName}</strong>`;
-                if (s) labelHtml += `<br><span style="color:rgba(160,200,255,0.7);font-size:0.72rem;">${s.volume_ml} mL</span>`;
+                if (s) {
+                  labelHtml += `<br><span style="color:rgba(160,200,255,0.7);font-size:0.72rem;">${s.volume_ml} mL</span>`;
+                  if (s.description) labelHtml += `<br><span style="color:rgba(200,220,255,0.6);font-size:0.68rem;">${s.description.substring(0, 80)}...</span>`;
+                }
                 arLabel.innerHTML = labelHtml;
                 arLabel.style.left = Math.min(dotX + 20, window.innerWidth - 320) + 'px';
                 arLabel.style.top  = Math.max(dotY - 60, 10) + 'px';
