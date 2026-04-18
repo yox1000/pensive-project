@@ -654,7 +654,14 @@
         const vol = s.volume_ml;
         const range = finding_data?.normal_range_ml || '';
         const status = finding_data?.status?.replace(/_/g, ' ') || 'detected';
-        const prompt = `Patient scan result: ${displayName} volume is ${vol} mL${range ? ' (normal: ' + range + ' mL)' : ''}. Status: ${status}. Give a 2-sentence personalized assessment for this patient. First sentence: state their specific measurement and whether it is concerning. Second sentence: one specific recommendation. No reasoning, no meta-text.`;
+
+        // Build full scan context so K2 can give holistic insight
+        const allStructures = structuresData.structures.map(st => {
+          const fd = finding_data ? null : null; // we already have finding_data for clicked one
+          return `${st.name.replace(/_/g,' ')}: ${st.volume_ml} mL`;
+        }).join(', ');
+
+        const prompt = `Full brain scan context: ${allStructures}. The patient is asking about: ${displayName}, volume ${vol} mL${range ? ' (normal: ' + range + ' mL)' : ''}, status: ${status}. In 2-3 sentences explain what this specific measurement means for THIS patient considering the overall scan findings. Mention any relevant relationships with other structures if applicable. No reasoning, no meta-text, just the patient explanation.`;
 
         insight.textContent += '\n\nGenerating personalized assessment...';
         try {
