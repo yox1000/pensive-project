@@ -266,32 +266,16 @@
       document.getElementById('upload-screen').classList.add('hidden');
       document.getElementById('viewer-screen').classList.add('active');
 
-      // 3 & 4. Demo mode: skip viewers, expand structure panel.
-      // Real mode: load NiiVue + Three.js
-      const isDemoScan = currentScanId.endsWith('_demo');
+      // 3. Load NiiVue
+      statusEl.textContent = 'Loading viewer...';
+      try {
+        await initNiiVue(currentScanId);
+      } catch (e) { console.warn('NiiVue:', e.message); }
 
-      if (!isDemoScan) {
-        try {
-          statusEl.textContent = 'Loading viewer...';
-          await initNiiVue(currentScanId);
-        } catch (e) { console.warn('NiiVue skipped:', e.message); }
-        try {
-          await initThreeJS(currentScanId);
-        } catch (e) { console.warn('3D skipped:', e.message); }
-      }
-
-      if (isDemoScan) {
-        // Expand info panel to full screen
-        const vs = document.getElementById('viewer-screen');
-        vs.style.gridTemplateColumns = '1fr';
-        vs.style.gridTemplateRows = '1fr';
-        document.getElementById('niivue-panel').style.display = 'none';
-        document.getElementById('threejs-panel').style.display = 'none';
-        const info = document.getElementById('info-panel');
-        info.style.maxHeight = '100vh';
-        info.style.flexDirection = 'column';
-        info.style.gridColumn = '1';
-      }
+      // 4. Load 3D mesh
+      try {
+        await initThreeJS(currentScanId);
+      } catch (e) { console.warn('3D:', e.message); }
 
       // 5. Populate structures list
       renderStructures(structuresData.structures);
