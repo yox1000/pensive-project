@@ -924,15 +924,22 @@
     btn.textContent = deepVisible ? (isLung ? 'Show Airways' : 'Hide Deep') : (isLung ? 'Show Lobes' : 'Show Deep');
     btn.style.background = deepVisible ? 'rgba(180,80,255,0.15)' : 'rgba(80,255,180,0.15)';
     btn.style.borderColor = deepVisible ? 'rgba(180,80,255,0.4)' : 'rgba(80,255,180,0.4)';
+    console.log('[TOGGLE] mode:', scanMode, 'isLung:', isLung, 'deepVisible:', deepVisible);
     if (window._medlensModel) {
       const hideList = isLung ? lungOuterNames : deepNames;
+      let toggled = 0;
       window._medlensModel.traverse(child => {
         if (child.isMesh) {
           const n = (child.name || '').toLowerCase();
           const shouldToggle = hideList.some(d => n.includes(d));
-          if (shouldToggle) child.visible = !deepVisible;
+          if (shouldToggle) {
+            child.visible = deepVisible;
+            toggled++;
+            console.log('[TOGGLE]', child.name, 'visible:', deepVisible);
+          }
         }
       });
+      console.log('[TOGGLE] toggled', toggled, 'meshes');
     }
   };
 
