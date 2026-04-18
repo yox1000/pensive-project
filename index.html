@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeuroView</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #060610;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    canvas#bg {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+
+    .upload-box {
+      position: relative;
+      z-index: 10;
+      width: 520px;
+      height: 380px;
+      background: rgba(10, 12, 40, 0.55);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-radius: 24px;
+      border: 1.5px solid rgba(80, 180, 255, 0.25);
+      box-shadow:
+        0 0 60px rgba(50, 130, 255, 0.08),
+        0 0 120px rgba(140, 60, 255, 0.06),
+        inset 0 0 40px rgba(80, 160, 255, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      cursor: pointer;
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+      user-select: none;
+    }
+
+    .upload-box:hover {
+      border-color: rgba(100, 200, 255, 0.55);
+      box-shadow:
+        0 0 80px rgba(50, 130, 255, 0.18),
+        0 0 160px rgba(140, 60, 255, 0.12),
+        inset 0 0 40px rgba(80, 160, 255, 0.08);
+      transform: scale(1.012);
+    }
+
+    .upload-box.drag-over {
+      border-color: rgba(120, 220, 255, 0.85);
+      box-shadow:
+        0 0 100px rgba(50, 180, 255, 0.3),
+        0 0 200px rgba(140, 60, 255, 0.2);
+    }
+
+    /* dashed animated border ring */
+    .upload-box::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 26px;
+      background: none;
+      border: 1.5px dashed rgba(80, 180, 255, 0.18);
+      animation: spin-ring 18s linear infinite;
+    }
+
+    @keyframes spin-ring {
+      to { transform: rotate(360deg); }
+    }
+
+    .scan-icon {
+      width: 72px;
+      height: 72px;
+      opacity: 0.85;
+      filter: drop-shadow(0 0 12px rgba(80, 180, 255, 0.6));
+      animation: pulse-icon 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-icon {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(80, 180, 255, 0.6)); }
+      50%       { filter: drop-shadow(0 0 24px rgba(140, 100, 255, 0.9)); }
+    }
+
+    .upload-label {
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: rgba(180, 220, 255, 0.9);
+      letter-spacing: 0.03em;
+    }
+
+    .upload-sub {
+      font-size: 0.8rem;
+      color: rgba(120, 160, 220, 0.55);
+      letter-spacing: 0.05em;
+    }
+
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div class="upload-box" id="uploadBox">
+  <!-- spinning dashed ring from ::before -->
+  <svg class="scan-icon" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- outer ring -->
+    <circle cx="36" cy="36" r="32" stroke="rgba(80,180,255,0.5)" stroke-width="1.5"/>
+    <!-- brain silhouette (simplified) -->
+    <path d="M24 34c0-6.627 5.373-10 12-10s12 3.373 12 10c0 2-.5 4-1.5 5.5C48 42 48 44 46 46c-1 1-2.5 1.5-4 1l-1 3h-10l-1-3c-1.5.5-3 0-4-1-2-2-2-4-.5-6.5C24.5 38 24 36 24 34Z"
+          stroke="rgba(120,200,255,0.85)" stroke-width="1.5" fill="rgba(80,140,255,0.08)"/>
+    <!-- neural lines inside brain -->
+    <line x1="30" y1="34" x2="36" y2="30" stroke="rgba(160,220,255,0.5)" stroke-width="1"/>
+    <line x1="36" y1="30" x2="42" y2="34" stroke="rgba(160,220,255,0.5)" stroke-width="1"/>
+    <line x1="30" y1="34" x2="36" y2="38" stroke="rgba(160,220,255,0.5)" stroke-width="1"/>
+    <line x1="36" y1="38" x2="42" y2="34" stroke="rgba(160,220,255,0.5)" stroke-width="1"/>
+    <circle cx="30" cy="34" r="1.5" fill="rgba(120,220,255,0.8)"/>
+    <circle cx="36" cy="30" r="1.5" fill="rgba(160,180,255,0.8)"/>
+    <circle cx="42" cy="34" r="1.5" fill="rgba(120,220,255,0.8)"/>
+    <circle cx="36" cy="38" r="1.5" fill="rgba(200,140,255,0.8)"/>
+    <!-- scan line sweep -->
+    <line x1="24" y1="36" x2="48" y2="36" stroke="rgba(80,220,200,0.4)" stroke-width="1" stroke-dasharray="3 3"/>
+    <!-- corner brackets -->
+    <path d="M10 18 L10 10 L18 10" stroke="rgba(80,180,255,0.4)" stroke-width="1.5" fill="none"/>
+    <path d="M54 10 L62 10 L62 18" stroke="rgba(80,180,255,0.4)" stroke-width="1.5" fill="none"/>
+    <path d="M10 54 L10 62 L18 62" stroke="rgba(80,180,255,0.4)" stroke-width="1.5" fill="none"/>
+    <path d="M62 54 L62 62 L54 62" stroke="rgba(80,180,255,0.4)" stroke-width="1.5" fill="none"/>
+  </svg>
+  <span class="upload-label">Click to load a brain scan</span>
+  <span class="upload-sub">NIfTI · DICOM · MGH · MHD</span>
+  <input type="file" id="fileInput" accept=".nii,.nii.gz,.dcm,.mgh,.mhd,.nhdr,.nrrd" />
+</div>
+
+<script>
+  // ── Background: floating neural-network ──────────────────────────────────
+  const canvas = document.getElementById('bg');
+  const ctx = canvas.getContext('2d');
+
+  let W, H, nodes;
+  const NODE_COUNT = 90;
+  const LINK_DIST   = 160;
+  const COLORS = [
+    [80,  180, 255],
+    [120, 140, 255],
+    [160,  90, 255],
+    [80,  220, 200],
+    [200, 120, 255],
+  ];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+
+  function randColor() {
+    return COLORS[Math.floor(Math.random() * COLORS.length)];
+  }
+
+  function initNodes() {
+    nodes = Array.from({ length: NODE_COUNT }, () => ({
+      x:   Math.random() * W,
+      y:   Math.random() * H,
+      vx:  (Math.random() - 0.5) * 0.4,
+      vy:  (Math.random() - 0.5) * 0.4,
+      r:   Math.random() * 2 + 1.2,
+      col: randColor(),
+      pulse: 0,
+    }));
+  }
+
+  // randomly fire a "pulse" that travels along edges
+  function firePulse() {
+    const n = nodes[Math.floor(Math.random() * nodes.length)];
+    n.pulse = 1.0;
+  }
+  setInterval(firePulse, 600);
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // subtle radial glow in centre
+    const gr = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.65);
+    gr.addColorStop(0,   'rgba(30,20,80,0.35)');
+    gr.addColorStop(1,   'rgba(6,6,16,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, W, H);
+
+    // edges
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist > LINK_DIST) continue;
+        const t = 1 - dist / LINK_DIST;
+        const pulse = Math.max(a.pulse, b.pulse);
+        const alpha = t * (0.12 + pulse * 0.4);
+        const [r, g, bl] = a.col;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha.toFixed(3)})`;
+        ctx.lineWidth = t * (0.6 + pulse * 1.2);
+        ctx.stroke();
+      }
+    }
+
+    // nodes
+    for (const n of nodes) {
+      const [r, g, b] = n.col;
+      const glow = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * (4 + n.pulse * 6));
+      glow.addColorStop(0,   `rgba(${r},${g},${b},${0.9 + n.pulse * 0.1})`);
+      glow.addColorStop(0.4, `rgba(${r},${g},${b},${0.2 + n.pulse * 0.3})`);
+      glow.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * (1 + n.pulse * 1.5), 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+
+    // update
+    for (const n of nodes) {
+      n.x += n.vx;
+      n.y += n.vy;
+      if (n.x < 0 || n.x > W) n.vx *= -1;
+      if (n.y < 0 || n.y > H) n.vy *= -1;
+      n.pulse = Math.max(0, n.pulse - 0.018);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  resize();
+  initNodes();
+  draw();
+  window.addEventListener('resize', () => { resize(); initNodes(); });
+
+
+  // ── Upload interaction ───────────────────────────────────────────────────
+  const box   = document.getElementById('uploadBox');
+  const input = document.getElementById('fileInput');
+
+  box.addEventListener('click', () => input.click());
+
+  box.addEventListener('dragover', e => {
+    e.preventDefault();
+    box.classList.add('drag-over');
+  });
+  box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
+  box.addEventListener('drop', e => {
+    e.preventDefault();
+    box.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) handleFile(input.files[0]);
+  });
+
+  function handleFile(file) {
+    console.log('Loaded file:', file.name, file.size, 'bytes');
+    // NiiVue viewer will go here
+  }
+</script>
+</body>
+</html>
