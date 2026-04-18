@@ -914,6 +914,7 @@
       </div>
       <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
       <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
+      <div id="ar-label" style="display:none;position:absolute;z-index:20;max-width:300px;background:rgba(10,12,40,0.92);backdrop-filter:blur(12px);border:1px solid rgba(80,180,255,0.35);border-radius:10px;padding:10px 14px;color:#e0e8ff;font-size:0.78rem;line-height:1.5;pointer-events:none;"></div>
       <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
         ✋ Open palm up/down to scale · ✊ Fist to rotate · ☝️ Point to select
       </div>
@@ -1174,7 +1175,12 @@
 
           // Re-evaluate gesture every frame — no locking, releases immediately when gesture stops
           activeGesture = isPointing(lm) ? 'point' : isOpenPalm(lm) ? 'scale' : isFist(lm) ? 'rotate' : null;
-          if (!activeGesture) { prevPalmX = null; prevPalmY = null; indicator.style.display = 'none'; return; }
+          if (!activeGesture) {
+            prevPalmX = null; prevPalmY = null;
+            indicator.style.display = 'none';
+            document.getElementById('ar-label').style.display = 'none';
+            return;
+          }
 
           // --- POINT ---
           if (activeGesture === 'point') {
@@ -1186,21 +1192,28 @@
             handCtx.fillStyle = hitName ? 'rgba(80,255,180,0.7)' : 'rgba(255,180,80,0.5)';
             handCtx.fill();
             handCtx.strokeStyle = 'white'; handCtx.lineWidth = 2; handCtx.stroke();
+
+            const arLabel = document.getElementById('ar-label');
             if (hitName) {
               highlightARStructure(hitName);
               indicator.style.display = 'block';
               indicator.textContent = '☝️ ' + hitName.replace(/_/g, ' ');
-              // Show popup immediately on hover — position near finger tip
               if (pointingAt !== hitName) {
                 pointingAt = hitName;
-                const popupX = Math.min(dotX + 20, window.innerWidth - 360);
-                const popupY = Math.max(dotY - 40, 10);
-                showOrganPopup(hitName, popupX, popupY);
+                // Show floating label inside AR overlay near finger tip
+                const s = structuresData?.structures?.find(st => st.name === hitName);
+                const displayName = hitName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                let labelHtml = `<strong style="color:rgba(120,200,255,0.95)">${displayName}</strong>`;
+                if (s) labelHtml += `<br><span style="color:rgba(160,200,255,0.7);font-size:0.72rem;">${s.volume_ml} mL</span>`;
+                arLabel.innerHTML = labelHtml;
+                arLabel.style.left = Math.min(dotX + 20, window.innerWidth - 320) + 'px';
+                arLabel.style.top  = Math.max(dotY - 60, 10) + 'px';
+                arLabel.style.display = 'block';
               }
             } else {
               resetARHighlight();
               pointingAt = null;
-              document.getElementById('organ-panel').style.display = 'none';
+              arLabel.style.display = 'none';
               indicator.style.display = 'block';
               indicator.textContent = '☝️ Pointing...';
             }
