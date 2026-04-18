@@ -222,11 +222,12 @@
   import * as THREE from 'https://esm.sh/three@0.170.0';
   import { OrbitControls } from 'https://esm.sh/three@0.170.0/addons/controls/OrbitControls.js';
   import { GLTFLoader } from 'https://esm.sh/three@0.170.0/addons/loaders/GLTFLoader.js';
+  import { ARButton } from 'https://esm.sh/three@0.170.0/addons/webxr/ARButton.js';
 
-  // Expose to global scope for the non-module script
   window.THREE = THREE;
   window.OrbitControls = OrbitControls;
   window.GLTFLoader = GLTFLoader;
+  window.ARButton = ARButton;
   window._threeReady = true;
   console.log('Three.js loaded successfully');
 </script>
@@ -287,13 +288,13 @@
     nv.setSliceType(nv.sliceTypeMultiplanar);
   }
 
-  // --- Three.js ---
+  // --- Three.js + WebXR AR ---
   async function initThreeJS(scanId) {
-    // Wait for Three.js module to load
     while (!window._threeReady) await new Promise(r => setTimeout(r, 100));
     const THREE = window.THREE;
     const OrbitControls = window.OrbitControls;
     const GLTFLoader = window.GLTFLoader;
+    const ARButton = window.ARButton;
 
     const container = document.getElementById('threejs-panel');
     const w = container.clientWidth;
@@ -302,13 +303,23 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x080818);
 
-    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 2000);
     camera.position.set(0, 0, 300);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.xr.enabled = true;
     container.appendChild(renderer.domElement);
+
+    // AR button (only appears if WebXR is supported)
+    const arBtn = ARButton.createButton(renderer, {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: document.body },
+    });
+    arBtn.style.cssText = 'position:absolute;bottom:16px;right:16px;z-index:100;padding:8px 16px;background:rgba(80,180,255,0.15);border:1px solid rgba(80,180,255,0.4);color:rgba(180,220,255,0.9);border-radius:8px;font-size:0.8rem;cursor:pointer;';
+    container.appendChild(arBtn);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -322,6 +333,43 @@
     dirLight2.position.set(-100, -100, -100);
     scene.add(dirLight2);
 
+    // AR reticle for surface placement
+    const reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.05, 0.08, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x4488ff, side: THREE.DoubleSide })
+    );
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+
+    let hitTestSource = null;
+    let modelPlaced = false;
+
+    renderer.xr.addEventListener('sessionstart', async () => {
+      scene.background = null;
+      controls.enabled = false;
+      const session = renderer.xr.getSession();
+      const viewerSpace = await session.requestReferenceSpace('viewer');
+      hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      session.addEventListener('select', () => {
+        if (reticle.visible && window._medlensModel) {
+          window._medlensModel.position.setFromMatrixPosition(reticle.matrix);
+          window._medlensModel.visible = true;
+          modelPlaced = true;
+          reticle.visible = false;
+        }
+      });
+    });
+
+    renderer.xr.addEventListener('sessionend', () => {
+      scene.background = new THREE.Color(0x080818);
+      controls.enabled = true;
+      hitTestSource = null;
+      modelPlaced = false;
+      reticle.visible = false;
+      if (window._medlensModel) window._medlensModel.visible = true;
+    });
+
     // Load GLB
     const loader = new GLTFLoader();
     try {
@@ -330,21 +378,14 @@
       });
 
       const model = gltf.scene;
-
-      // Center the model
       const box3 = new THREE.Box3().setFromObject(model);
       const center = box3.getCenter(new THREE.Vector3());
       model.position.sub(center);
 
-      // Scale to fit viewport
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) {
-        const scale = 200 / maxDim;
-        model.scale.multiplyScalar(scale);
-      }
+      if (maxDim > 0) model.scale.multiplyScalar(200 / maxDim);
 
-      // Make meshes semi-transparent
       model.traverse(child => {
         if (child.isMesh) {
           child.material.transparent = true;
@@ -359,16 +400,46 @@
       console.error('Failed to load 3D model:', err);
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
+    // Raycasting for structure selection (works in normal + AR)
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    renderer.domElement.addEventListener('click', e => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      if (!window._medlensModel) return;
+      const hits = raycaster.intersectObjects(window._medlensModel.children, true);
+      if (hits.length > 0) {
+        const name = hits[0].object.name;
+        if (name) {
+          document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
+          document.querySelectorAll('.structure-item').forEach(el => {
+            if (el.querySelector('span')?.textContent === name.replace(/_/g, ' ')) el.classList.add('selected');
+          });
+          highlightStructure(name);
+        }
+      }
+    });
+
+    // XR-compatible animation loop
+    renderer.setAnimationLoop((timestamp, frame) => {
+      if (frame && hitTestSource && !modelPlaced) {
+        const refSpace = renderer.xr.getReferenceSpace();
+        const hits = frame.getHitTestResults(hitTestSource);
+        if (hits.length > 0) {
+          reticle.visible = true;
+          reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix);
+        } else {
+          reticle.visible = false;
+        }
+      }
       controls.update();
       renderer.render(scene, camera);
-    }
-    animate();
+    });
 
     window.addEventListener('resize', () => {
-      const w2 = container.clientWidth;
-      const h2 = container.clientHeight;
+      const w2 = container.clientWidth, h2 = container.clientHeight;
       camera.aspect = w2 / h2;
       camera.updateProjectionMatrix();
       renderer.setSize(w2, h2);
