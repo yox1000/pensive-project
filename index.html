@@ -580,11 +580,17 @@
     console.log('[HIGHLIGHT] name:', name, 'keyword:', keyword);
     let matchCount = 0, totalMeshes = 0;
 
+    // Special case: "brain" highlights everything, "skull" has no mesh
+    const highlightAll = (name === 'brain' || name === 'skull');
+
     window._medlensModel.traverse(child => {
       if (child.isMesh) {
         totalMeshes++;
         const childLower = (child.name || '').toLowerCase();
-        const isMatch = child.name === name || childLower.includes(keyword);
+        // Match by keyword OR special keywords for brainstem (includes medulla)
+        let isMatch = highlightAll || child.name === name || childLower.includes(keyword);
+        if (!isMatch && name === 'brainstem') isMatch = childLower.includes('medulla');
+        if (!isMatch && name === 'spinal_cord') isMatch = childLower.includes('medulla');
         if (isMatch) matchCount++;
 
         // Clone material once so changes don't affect shared materials
