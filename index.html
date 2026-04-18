@@ -478,7 +478,8 @@
     for (const s of structures) {
       const div = document.createElement('div');
       div.className = 'structure-item';
-      div.innerHTML = `<span>${s.name.replace(/_/g, ' ')}</span><span class="structure-vol">${s.volume_ml} mL</span>`;
+      const displayName = s.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      div.innerHTML = `<span>${displayName}</span><span class="structure-vol">${s.volume_ml} mL</span>`;
       div.addEventListener('click', (e) => {
         document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
         div.classList.add('selected');
@@ -521,7 +522,9 @@
     title.textContent = displayName;
 
     if (s) {
-      stats.innerHTML = '<b>Volume:</b> ' + s.volume_ml + ' mL &nbsp; <b>Voxels:</b> ' + s.voxel_count.toLocaleString();
+      let statsHtml = '<b>Volume:</b> ' + s.volume_ml + ' mL &nbsp; <b>Voxels:</b> ' + s.voxel_count.toLocaleString();
+      if (s.description) statsHtml += '<br><span style="color:rgba(160,200,255,0.7);font-style:italic;">' + s.description + '</span>';
+      stats.innerHTML = statsHtml;
     } else {
       stats.innerHTML = 'Structure detected';
     }
@@ -586,8 +589,15 @@
                 if (data === '[DONE]') continue;
                 try {
                   const parsed = JSON.parse(data);
-                  const content = parsed.choices?.[0]?.delta?.content || '';
-                  k2Text += content;
+                  let content = parsed.choices?.[0]?.delta?.content || '';
+                  if (content.includes('<think>')) window._popupThink = true;
+                  if (window._popupThink) {
+                    if (content.includes('</think>')) {
+                      content = content.split('</think>').pop();
+                      window._popupThink = false;
+                    } else { content = ''; }
+                  }
+                  if (content) k2Text += content;
                 } catch {}
               }
             }
@@ -653,8 +663,18 @@
             if (data === '[DONE]') continue;
             try {
               const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content || '';
-              textDiv.textContent += content;
+              let content = parsed.choices?.[0]?.delta?.content || '';
+              // Filter out <think> reasoning blocks from K2
+              if (content.includes('<think>')) window._inThink = true;
+              if (window._inThink) {
+                if (content.includes('</think>')) {
+                  content = content.split('</think>').pop();
+                  window._inThink = false;
+                } else {
+                  content = '';
+                }
+              }
+              if (content) textDiv.textContent += content;
             } catch {}
           }
         }

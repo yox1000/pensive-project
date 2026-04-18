@@ -7,6 +7,8 @@ const app = express();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 const SEG_API = process.env.BACKEND_URL || 'http://localhost:9999';
+// Direct tunnel for large uploads (serveo can't handle >1MB POST)
+const SEG_API_DIRECT = process.env.BACKEND_URL_DIRECT || 'http://localhost:9999';
 
 app.use(express.json());
 
@@ -25,14 +27,36 @@ app.use('/niivue', express.static(path.join(__dirname, 'node_modules/@niivue/nii
 
 // Upload scan → TotalSegmentator → return scan_id
 app.post('/api/segment', upload.single('file'), async (req, res) => {
-  const formData = new FormData();
-  const blob = new Blob([req.file.buffer]);
-  formData.append('file', blob, req.file.originalname);
+  try {
+    // Build multipart form manually for Node fetch compatibility
+    const boundary = '----MedLens' + Date.now();
+    const filename = req.file.originalname || 'scan.nii.gz';
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
 
-  const response = await fetch(`${SEG_API}/segment`, { method: 'POST', body: formData });
-  if (!response.ok) return res.status(response.status).json({ error: 'Segmentation failed' });
-  const data = await response.json();
-  res.json(data);
+    const body = Buffer.concat([
+      Buffer.from(header),
+      req.file.buffer,
+      Buffer.from(footer),
+    ]);
+
+    // Use direct tunnel for uploads (serveo can't handle large POST)
+    const response = await fetch(`${SEG_API_DIRECT}/segment`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Segment proxy error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Get structure labels + metadata for a scan
@@ -81,21 +105,9 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `You are a medical communication assistant. You will receive a detailed clinical analysis of a medical scan produced by a segmentation AI. Your job is to reason carefully through it and rewrite it for a patient with no medical background — clear, calm, and honest. Never downplay serious findings. Never diagnose. Always recommend consulting a doctor.
+const SYSTEM_PROMPT = `You are a medical communication assistant. You receive clinical analysis of a medical scan and rewrite it for a patient with no medical background. Be clear, calm, honest. Never diagnose. Always recommend consulting a doctor.
 
-Respond in exactly this format:
-
-SUMMARY
-1-2 sentence plain English overview.
-
-WHAT WE FOUND
-Bullet points, plain language, no jargon.
-
-WHAT THIS MIGHT MEAN
-Honest but calm interpretation.
-
-NEXT STEPS
-What the patient should do.`;
+IMPORTANT: Do NOT include any thinking, reasoning, or internal monologue. Output ONLY the patient-facing text. Be concise: 4-6 sentences maximum. No headers, no bullet points, just flowing text a patient can read.`;
 
 // Send structure data to K2, stream patient-friendly response
 app.post('/api/analyze', async (req, res) => {
