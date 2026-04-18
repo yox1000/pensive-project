@@ -566,11 +566,16 @@
     };
 
     const keyword = keywordMap[name] || lower;
+    console.log('[HIGHLIGHT] name:', name, 'keyword:', keyword);
+    let matchCount = 0, totalMeshes = 0;
 
     window._medlensModel.traverse(child => {
       if (child.isMesh) {
-        const childLower = child.name.toLowerCase();
+        totalMeshes++;
+        const childLower = (child.name || '').toLowerCase();
         const isMatch = child.name === name || childLower.includes(keyword);
+        if (isMatch) matchCount++;
+        if (totalMeshes <= 3) console.log('[HIGHLIGHT] mesh:', child.name, 'match:', isMatch);
         if (isMatch) {
           child.material.opacity = 1.0;
           child.material.emissive = new THREE.Color(0x3388ff);
@@ -582,6 +587,7 @@
         }
       }
     });
+    console.log('[HIGHLIGHT] matched', matchCount, 'of', totalMeshes, 'meshes');
   }
 
   // --- Organ popup ---
