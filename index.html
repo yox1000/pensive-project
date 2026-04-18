@@ -757,7 +757,7 @@
       <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
       <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
       <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
-        Pinch to scale · Open hand to rotate · Drag/scroll also works
+        ✋ Open palm up/down to scale · ✊ Fist to rotate · ☝️ Point to select
       </div>
     `;
 
@@ -905,19 +905,22 @@
         }
 
         function isPointing(lm) {
-          // Index finger extended, middle/ring/pinky curled
-          const indexTip = lm[8].y;
-          const indexMcp = lm[5].y;
-          const middleTip = lm[12].y;
-          const middleMcp = lm[9].y;
-          const ringTip = lm[16].y;
-          const ringMcp = lm[13].y;
-          // Index extended (tip above mcp in screen coords = lower y)
-          const indexExtended = indexMcp - indexTip > 0.04;
-          // Others curled (tip below or near mcp)
-          const middleCurled = middleTip - middleMcp > -0.02;
-          const ringCurled = ringTip - ringMcp > -0.02;
+          const indexExtended = lm[5].y - lm[8].y > 0.04;
+          const middleCurled = lm[12].y - lm[9].y > -0.02;
+          const ringCurled = lm[16].y - lm[13].y > -0.02;
           return indexExtended && middleCurled && ringCurled;
+        }
+
+        function isOpenPalm(lm) {
+          // All 4 fingers extended (tips above MCPs)
+          const fingers = [[8,5],[12,9],[16,13],[20,17]];
+          return fingers.every(([tip, mcp]) => lm[mcp].y - lm[tip].y > 0.04);
+        }
+
+        function isFist(lm) {
+          // All 4 fingers curled (tips below MCPs)
+          const fingers = [[8,5],[12,9],[16,13],[20,17]];
+          return fingers.every(([tip, mcp]) => lm[tip].y - lm[mcp].y > 0.02);
         }
 
         function raycastFromFinger(indexTip) {
@@ -1054,19 +1057,19 @@
           pointingAt = null;
           if (selectedInAR) { resetARHighlight(); selectedInAR = null; }
 
-          if (pinch < 0.06) {
-            // Pinch: scale with vertical movement
+          if (isOpenPalm(lm)) {
+            // Flat open palm rising/falling = scale up/down
             if (prevPalmY !== null) {
-              const dy = prevPalmY - lm[9].y; // MIDDLE_FINGER_MCP as palm center
+              const dy = prevPalmY - lm[9].y; // move up = negative delta = scale up
               arScale = Math.max(0.1, Math.min(5, arScale + dy * 2));
               arModel.scale.setScalar(arScale * baseScale);
               indicator.style.display = 'block';
-              indicator.textContent = 'Scale: ' + arScale.toFixed(2) + 'x';
+              indicator.textContent = '✋ Scale: ' + arScale.toFixed(2) + 'x';
             }
             prevPalmY = lm[9].y;
             prevPalmX = null;
-          } else {
-            // Open hand: rotate model by tracking palm movement
+          } else if (isFist(lm)) {
+            // Closed fist drag = rotate
             const palmX = lm[9].x;
             const palmY = lm[9].y;
             if (prevPalmX !== null) {
@@ -1075,10 +1078,14 @@
               arModel.rotation.y += dx;
               arModel.rotation.x += dy;
               indicator.style.display = 'block';
-              indicator.textContent = 'Rotating';
+              indicator.textContent = '✊ Rotating';
             }
             prevPalmX = palmX;
             prevPalmY = palmY;
+          } else {
+            prevPalmX = null;
+            prevPalmY = null;
+            indicator.style.display = 'none';
           }
         });
 
