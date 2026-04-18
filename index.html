@@ -7,9 +7,8 @@
   <script type="module">
     import { Niivue } from "https://esm.sh/@niivue/niivue@0.68.2";
     window.Niivue = Niivue;
-  </script>
-  <script type="importmap">
-    { "imports": { "three": "https://esm.sh/three@0.170.0" } }
+    window._niivueReady = true;
+    console.log('NiiVue loaded');
   </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -220,7 +219,7 @@
 </script>
 
 <script type="module">
-  import * as THREE from 'three';
+  import * as THREE from 'https://esm.sh/three@0.170.0';
   import { OrbitControls } from 'https://esm.sh/three@0.170.0/addons/controls/OrbitControls.js';
   import { GLTFLoader } from 'https://esm.sh/three@0.170.0/addons/loaders/GLTFLoader.js';
 
