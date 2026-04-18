@@ -355,7 +355,7 @@
     scene.background = new THREE.Color(0x080818);
 
     const camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 2000);
-    camera.position.set(0, 0, 300);
+    camera.position.set(0, 0, 180);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
@@ -448,7 +448,7 @@
 
       const size = box3.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) model.scale.multiplyScalar(200 / maxDim);
+      if (maxDim > 0) model.scale.multiplyScalar(300 / maxDim);
 
       model.traverse(child => {
         if (child.isMesh) {
@@ -461,7 +461,7 @@
       scene.add(model);
       window._medlensModel = model;
 
-      camera.position.set(0, 0, 300);
+      camera.position.set(0, 0, 180);
       controls.target.set(0, 0, 0);
       controls.update();
     } catch (err) {
