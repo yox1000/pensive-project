@@ -1327,12 +1327,54 @@
     })();
   };
 
-  // Build scan context string for voice queries
   function buildScanContext() {
     if (!structuresData?.structures) return '';
     return structuresData.structures
       .map(s => `${s.name.replace(/_/g,' ')}: ${s.volume_ml}mL`)
       .join(', ');
+  }
+
+  function buildStructureNames() {
+    return structuresData?.structures?.map(s => s.name) || [];
+  }
+
+  function executeARIntent(intent) {
+    if (!intent || !window._arModel) return;
+    const { action, structure } = intent;
+
+    if (action === 'highlight' || action === 'highlight_explain' || action === 'highlight_volume' || action === 'highlight_compare') {
+      if (structure) highlightARStructure(structure);
+    } else if (action === 'highlight_status') {
+      if (structure) {
+        const s = structuresData?.structures?.find(st => st.name === structure);
+        const status = s?.status || '';
+        // Color green if normal, red if abnormal
+        window._arModel.traverse(child => {
+          if (child.isMesh) {
+            const isMatch = child.name === structure || child.name.toLowerCase().includes(structure.toLowerCase());
+            child.material.opacity = isMatch ? 1.0 : 0.2;
+            if (isMatch) {
+              child.material.emissive = new THREE.Color(status.includes('normal') ? 0x00ff44 : 0xff2200);
+              child.material.emissiveIntensity = 0.5;
+            }
+          }
+        });
+      }
+    } else if (action === 'highlight_all_abnormal') {
+      window._arModel.traverse(child => {
+        if (child.isMesh) {
+          const s = structuresData?.structures?.find(st => st.name === child.name);
+          const isAbnormal = s?.status && !s.status.includes('normal');
+          child.material.opacity = isAbnormal ? 1.0 : 0.15;
+          if (isAbnormal) {
+            child.material.emissive = new THREE.Color(0xff2200);
+            child.material.emissiveIntensity = 0.5;
+          }
+        }
+      });
+    } else if (action === 'rotate') {
+      if (window._arPivot) window._arPivot.rotation.y += Math.PI;
+    }
   }
 
   let _arRecognition = null;
@@ -1376,12 +1418,18 @@
         const res = await fetch('/api/voice-query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, scanContext: buildScanContext() }),
+          body: JSON.stringify({ question, scanContext: buildScanContext(), structureNames: buildStructureNames() }),
         });
         if (!res.ok) throw new Error(await res.text());
 
         const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
+        const intentRaw = res.headers.get('X-Intent');
+        const intent = intentRaw ? JSON.parse(decodeURIComponent(intentRaw)) : null;
+
         status.textContent = `You: "${question}"\n🤖 ${answerText}`;
+
+        // Trigger AR action based on intent
+        if (intent) executeARIntent(intent);
 
         const audioBlob = await res.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
