@@ -550,7 +550,7 @@
     btn.disabled = false;
   };
 
-  // --- Webcam AR overlay (pure Three.js, no A-Frame, works on any desktop) ---
+  // --- Webcam AR overlay ---
   window.launchMarkerAR = function() {
     if (!currentScanId || !window._medlensModel) return;
     const THREE = window.THREE;
@@ -558,94 +558,120 @@
     const overlay = document.getElementById('ar-overlay');
     overlay.style.display = 'block';
     overlay.innerHTML = `
-      <video id="ar-video" autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;transform:scaleX(-1);"></video>
+      <video id="ar-video" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;"></video>
       <canvas id="ar-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;"></canvas>
-      <div style="position:absolute;top:16px;right:16px;z-index:10;">
-        <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:1rem;">Close AR</button>
+      <div style="position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:8px;">
+        <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
-      <div style="position:absolute;bottom:16px;left:16px;z-index:10;color:white;font-size:0.8rem;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;">
-        Drag to rotate. Scroll to zoom. Press +/- to scale.
+      <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
+        Drag to rotate · Scroll to zoom · +/− to scale
       </div>
     `;
 
     const video = document.getElementById('ar-video');
     const canvas = document.getElementById('ar-canvas');
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    canvas.width = w;
-    canvas.height = h;
 
-    // Start webcam
-    navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: 'user' } })
-      .then(stream => { video.srcObject = stream; })
-      .catch(err => console.error('Webcam error:', err));
+    // Start webcam — request native resolution to avoid stretching
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    }).then(stream => {
+      video.srcObject = stream;
+      // Once video dimensions are known, sync camera aspect
+      video.onloadedmetadata = () => {
+        const vw = video.videoWidth, vh = video.videoHeight;
+        arCamera.aspect = vw / vh;
+        arCamera.updateProjectionMatrix();
+        // Sync canvas to video native aspect inside the window
+        const winAspect = window.innerWidth / window.innerHeight;
+        const vidAspect = vw / vh;
+        let rw = window.innerWidth, rh = window.innerHeight;
+        if (vidAspect > winAspect) rh = rw / vidAspect;
+        else rw = rh * vidAspect;
+        renderer.setSize(Math.round(rw), Math.round(rh));
+        canvas.style.left = `${(window.innerWidth - rw) / 2}px`;
+        canvas.style.top  = `${(window.innerHeight - rh) / 2}px`;
+        canvas.style.width  = `${rw}px`;
+        canvas.style.height = `${rh}px`;
+      };
+    }).catch(err => console.error('Webcam error:', err));
 
-    // Three.js scene on transparent canvas over webcam
+    // Three.js over transparent canvas
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2000);
-    camera.position.set(0, 0, 300);
+    const arCamera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
+    arCamera.position.set(0, 0, 300);
 
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
-    const controls = new (window.OrbitControls)(camera, canvas);
+    const controls = new (window.OrbitControls)(arCamera, canvas);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dl = new THREE.DirectionalLight(0xffffff, 1.0);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.2);
     dl.position.set(100, 200, 150);
     scene.add(dl);
+    const dl2 = new THREE.DirectionalLight(0x8888ff, 0.4);
+    dl2.position.set(-100, -100, 50);
+    scene.add(dl2);
 
-    // Clone the existing model
+    // Clone model, re-center it for AR view
     const arModel = window._medlensModel.clone();
+    const bbox = new THREE.Box3().setFromObject(arModel);
+    const center = bbox.getCenter(new THREE.Vector3());
+    arModel.position.sub(center);
+    const size = bbox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) arModel.scale.multiplyScalar(180 / maxDim);
+
     arModel.traverse(child => {
       if (child.isMesh) {
         child.material = child.material.clone();
         child.material.transparent = true;
-        child.material.opacity = 0.8;
+        child.material.opacity = 0.85;
         child.material.side = THREE.DoubleSide;
+        child.material.depthWrite = false;
       }
     });
     scene.add(arModel);
     window._arModel = arModel;
 
+    let arScale = 1.0;
+    window._arScaleHandler = (e) => {
+      if (e.key === '+' || e.key === '=') arScale = Math.min(arScale * 1.15, 5);
+      else if (e.key === '-') arScale = Math.max(arScale / 1.15, 0.1);
+      else return;
+      arModel.scale.setScalar(arScale * (180 / maxDim));
+    };
+    window.addEventListener('keydown', window._arScaleHandler);
+
     function animate() {
       if (!overlay.style.display || overlay.style.display === 'none') return;
       window._arRAF = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
+      renderer.render(scene, arCamera);
     }
     animate();
 
-    // Scale controls
-    let arScale = 1.0;
-    window._arScaleHandler = (e) => {
-      if (e.key === '+' || e.key === '=') arScale *= 1.15;
-      else if (e.key === '-') arScale /= 1.15;
-      else return;
-      arModel.scale.setScalar(arScale);
+    window._arResizeHandler = () => {
+      arCamera.aspect = window.innerWidth / window.innerHeight;
+      arCamera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
     };
-    window.addEventListener('keydown', window._arScaleHandler);
-
-    window.addEventListener('resize', () => {
-      const w2 = window.innerWidth, h2 = window.innerHeight;
-      camera.aspect = w2 / h2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w2, h2);
-    }, { once: false });
+    window.addEventListener('resize', window._arResizeHandler);
   };
 
   window.closeMarkerAR = function() {
     const overlay = document.getElementById('ar-overlay');
     if (window._arRAF) cancelAnimationFrame(window._arRAF);
-    // Stop webcam
     const video = document.getElementById('ar-video');
     if (video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
     overlay.style.display = 'none';
     overlay.innerHTML = '';
     if (window._arScaleHandler) window.removeEventListener('keydown', window._arScaleHandler);
+    if (window._arResizeHandler) window.removeEventListener('resize', window._arResizeHandler);
   };
 </script>
 </body>
