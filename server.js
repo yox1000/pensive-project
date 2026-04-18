@@ -195,17 +195,20 @@ app.post('/api/analyze', async (req, res) => {
     // Strip <think>...</think> blocks
     raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
 
-    // Strip everything before the actual patient-facing text
-    raw = raw.replace(/^[\s\S]*?(?=Your |The scan|The measurement|The imaging|This scan|This result|This value|This finding|Based on)/im, '');
-    // Remove wrapping quotes
+    // Strip <think> blocks, reasoning, meta-text
+    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+    // Remove common prefixes K2 adds
+    raw = raw.replace(/^[\s\S]*?(?=Your |The scan|The measurement|The imaging|This scan|This result|This value|This finding|Based on|the measurement)/im, '');
     raw = raw.replace(/^["'\s]+|["'\s]+$/g, '');
-    // Remove "The content:" prefix
     raw = raw.replace(/^The content:\s*/i, '');
+    raw = raw.replace(/^the measurement:\s*/i, '');
+    raw = raw.replace(/"\s*"/g, ' ');  // remove stray quotes between sentences
+    raw = raw.replace(/\\"/g, '');     // remove escaped quotes
 
-    // Take only first 3 sentences
+    // Extract sentences, filter junk
     const sentences = raw.match(/[^.!?\n]+[.!?]+/g) || [raw];
     const clean = sentences
-      .filter(s => s.trim().length > 15 && !s.match(/user|system|instruction|meta|roleplay|sentence|output|format|comply|heading|bullet/i))
+      .filter(s => s.trim().length > 15 && !s.match(/\buser\b|system prompt|instruction|roleplay|sentence \d|output only|format|comply|heading|bullet point/i))
       .slice(0, 3)
       .join(' ')
       .trim();
