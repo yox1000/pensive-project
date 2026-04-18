@@ -335,10 +335,13 @@
     });
     await nv.attachToCanvas(document.getElementById('gl'));
     const volumes = [{ url: `${BACKEND}/scan/${scanId}`, name: 'scan.nii.gz', colormap: 'gray' }];
-    // Only load segmentation overlay for brain mode (others don't have matching segmentation)
-    if (scanMode === 'brain') {
-      volumes.push({ url: `${BACKEND}/segmentation/${scanId}`, name: 'seg.nii.gz', colormap: 'actc', opacity: 0.4 });
-    }
+    // Try to load segmentation overlay if it exists
+    try {
+      const segCheck = await fetch(`${BACKEND}/segmentation/${scanId}`, { method: 'HEAD' });
+      if (segCheck.ok) {
+        volumes.push({ url: `${BACKEND}/segmentation/${scanId}`, name: 'seg.nii.gz', colormap: 'actc', opacity: 0.4 });
+      }
+    } catch {}
     await nv.loadVolumes(volumes);
     nv.setSliceType(nv.sliceTypeMultiplanar);
   }
