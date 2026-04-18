@@ -131,7 +131,7 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `You are a medical imaging assistant. Given clinical findings from a scan segmentation, provide a clear, calm, patient-friendly explanation. Never diagnose. Recommend consulting a doctor. Be concise: 3-5 sentences of flowing text. No headers, no bullets, no reasoning.`;
+const SYSTEM_PROMPT = `You are a medical scan assistant. Explain findings to patients in exactly 3 sentences. Sentence 1: what was measured. Sentence 2: whether it's normal. Sentence 3: recommend discussing with their doctor. No headers, no bullets. Plain language only.`;
 
 // BiMediX2 running on local cluster via vLLM
 const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';
@@ -150,31 +150,38 @@ app.post('/api/analyze', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
 
-  // Try BiMediX2 first (local cluster), fallback to K2 cloud
-  let response;
-  let usedModel = 'bimedix2';
+  // Try BiMediX2 first (local cluster, non-streaming), fallback to K2 cloud (streaming)
   try {
-    response = await fetch(BIMEDIX_URL, {
+    const bimedixRes = await fetch(BIMEDIX_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: BIMEDIX_MODEL, messages, stream: true, max_tokens: 512 }),
-      signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({ messages, max_tokens: 300 }),
+      signal: AbortSignal.timeout(30000),
     });
-    if (!response.ok) throw new Error('BiMediX2 not ready');
+
+    if (bimedixRes.ok) {
+      const data = await bimedixRes.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      // Send as SSE so frontend parser works
+      res.write('data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n');
+      res.write('data: [DONE]\n');
+      res.end();
+      return;
+    }
   } catch (err) {
     console.log('BiMediX2 unavailable, falling back to K2:', err.message);
-    usedModel = 'k2';
-    response = await fetch(process.env.K2_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.K2_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true }),
-    });
   }
 
-  // Stream response, filtering think blocks
+  // Fallback: K2 streaming
+  const response = await fetch(process.env.K2_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.K2_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model: process.env.K2_MODEL, messages, stream: true }),
+  });
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let inThink = false;
@@ -194,21 +201,16 @@ app.post('/api/analyze', async (req, res) => {
       try {
         const parsed = JSON.parse(data);
         let content = parsed.choices?.[0]?.delta?.content || '';
-        // Filter <think> blocks (K2 reasoning)
         if (content.includes('<think>')) inThink = true;
         if (inThink) {
-          if (content.includes('</think>')) {
-            content = content.split('</think>').pop();
-            inThink = false;
-          } else { content = ''; }
+          if (content.includes('</think>')) { content = content.split('</think>').pop(); inThink = false; }
+          else { content = ''; }
         }
         if (content) {
           parsed.choices[0].delta.content = content;
           res.write('data: ' + JSON.stringify(parsed) + '\n');
         }
-      } catch {
-        res.write(line + '\n');
-      }
+      } catch { res.write(line + '\n'); }
     }
   }
   res.end();
