@@ -607,8 +607,10 @@
           child.material.side = THREE.DoubleSide;
           child._matCloned = true;
         }
-        // Keep visible, change opacity (avoids model jumping when bounding box shrinks)
-        child.visible = true;
+        // Keep visible unless hidden by "Hide Deep" toggle
+        const childNameLower = (child.name || '').toLowerCase();
+        const isDeepStruct = deepNames.some(d => childNameLower.includes(d));
+        if (!isDeepStruct || deepVisible) child.visible = true;
         if (isMatch) {
           child.material.opacity = 1.0;
           child.material.emissive = new THREE.Color(0x2288ff);
@@ -1001,10 +1003,11 @@
       <canvas id="ar-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;"></canvas>
       <div style="position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:8px;">
         <button id="ar-mic-btn" onclick="toggleARVoice()" style="padding:8px 16px;background:rgba(80,180,255,0.2);border:1px solid rgba(80,180,255,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">🎙 Ask</button>
+        <button id="ar-deep-btn" onclick="toggleARDeep()" style="padding:8px 16px;background:rgba(180,80,255,0.2);border:1px solid rgba(180,80,255,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">Hide Deep</button>
         <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
       <div id="ar-voice-status" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(10,12,40,0.9);border:1px solid rgba(80,180,255,0.3);border-radius:12px;padding:10px 18px;color:#e0e8ff;font-size:0.8rem;text-align:center;max-width:400px;"></div>
-      <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;"></canvas>
+      <canvas id="hand-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;transform:scaleX(-1);"></canvas>
       <div id="gesture-indicator" style="display:none;position:absolute;top:16px;left:16px;z-index:10;color:#4af;font-size:0.85rem;background:rgba(0,0,0,0.6);padding:6px 14px;border-radius:20px;"></div>
       <div id="ar-label" style="display:none;position:absolute;z-index:20;max-width:300px;background:rgba(10,12,40,0.92);backdrop-filter:blur(12px);border:1px solid rgba(80,180,255,0.35);border-radius:10px;padding:10px 14px;color:#e0e8ff;font-size:0.78rem;line-height:1.5;pointer-events:none;"></div>
       <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;color:rgba(255,255,255,0.8);font-size:0.75rem;background:rgba(0,0,0,0.5);padding:6px 14px;border-radius:20px;white-space:nowrap;">
@@ -1502,6 +1505,22 @@
     };
 
     _arRecognition.start();
+  };
+
+  // Toggle deep structures in AR
+  let arDeepVisible = true;
+  window.toggleARDeep = function() {
+    arDeepVisible = !arDeepVisible;
+    const btn = document.getElementById('ar-deep-btn');
+    btn.textContent = arDeepVisible ? 'Hide Deep' : 'Show Deep';
+    if (window._arModel) {
+      window._arModel.traverse(child => {
+        if (child.isMesh) {
+          const n = (child.name || '').toLowerCase();
+          if (deepNames.some(d => n.includes(d))) child.visible = arDeepVisible;
+        }
+      });
+    }
   };
 
   window.closeMarkerAR = function() {
