@@ -284,21 +284,37 @@ app.post('/api/voice-query', async (req, res) => {
   if (!sessions[sid]) sessions[sid] = [];
 
   try {
-    // Run the agent
     const result = await runAgent(question, scanContext, structureNames, sessions[sid]);
 
-    // Store in conversation history
     sessions[sid].push({ role: 'user', content: question });
-    sessions[sid].push({ role: 'assistant', content: result.speech });
+    sessions[sid].push({ role: 'assistant', content: result.speech || result.walkthrough?.[0]?.speech || '' });
     if (sessions[sid].length > 12) sessions[sid] = sessions[sid].slice(-12);
 
-    // Convert speech to audio
-    const audioBuffer = await textToSpeech(result.speech);
-
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('X-Answer-Text', encodeURIComponent(result.speech));
-    res.setHeader('X-Actions', encodeURIComponent(JSON.stringify(result.actions)));
-    res.send(Buffer.from(audioBuffer));
+    if (result.walkthrough) {
+      // Walkthrough mode: generate TTS for each step, return all as JSON
+      const steps = [];
+      for (const step of result.walkthrough) {
+        try {
+          const audio = await textToSpeech(step.speech);
+          steps.push({
+            speech: step.speech,
+            actions: step.actions || [],
+            delay: step.delay || 6,
+            audio: Buffer.from(audio).toString('base64'),
+          });
+        } catch {
+          steps.push({ speech: step.speech, actions: step.actions || [], delay: step.delay || 6, audio: null });
+        }
+      }
+      res.json({ walkthrough: steps });
+    } else {
+      // Single response mode
+      const audioBuffer = await textToSpeech(result.speech);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Answer-Text', encodeURIComponent(result.speech));
+      res.setHeader('X-Actions', encodeURIComponent(JSON.stringify(result.actions || [])));
+      res.send(Buffer.from(audioBuffer));
+    }
   } catch (err) {
     console.error('Agent error:', err.message);
     res.status(500).json({ error: err.message });

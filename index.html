@@ -1749,6 +1749,35 @@
         body: JSON.stringify({ question, scanContext: buildScanContext(), structureNames: buildStructureNames() }),
       });
       if (!res.ok) throw new Error(await res.text());
+      const contentType = res.headers.get('Content-Type') || '';
+
+      if (contentType.includes('application/json')) {
+        // Walkthrough mode: sequential steps
+        const data = await res.json();
+        if (data.walkthrough) {
+          status.textContent = `You: "${question}"\n🤖 Starting walkthrough...`;
+          for (let i = 0; i < data.walkthrough.length; i++) {
+            const step = data.walkthrough[i];
+            status.textContent = `🤖 [${i+1}/${data.walkthrough.length}] ${step.speech}`;
+            if (step.actions) executeActions(step.actions);
+            if (step.audio) {
+              const audioBlob = new Blob([Uint8Array.from(atob(step.audio), c => c.charCodeAt(0))], { type: 'audio/mpeg' });
+              const audioUrl = URL.createObjectURL(audioBlob);
+              const audio = new Audio(audioUrl);
+              await new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; audio.play().catch(resolve); });
+              URL.revokeObjectURL(audioUrl);
+            }
+            // Wait before next step
+            if (i < data.walkthrough.length - 1) {
+              await new Promise(r => setTimeout(r, (step.delay || 2) * 1000));
+            }
+          }
+          status.textContent = `🤖 Walkthrough complete.`;
+          return;
+        }
+      }
+
+      // Single response mode
       const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
       const actionsRaw = res.headers.get('X-Actions');
       const actions = actionsRaw ? JSON.parse(decodeURIComponent(actionsRaw)) : [];
