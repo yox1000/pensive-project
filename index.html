@@ -1808,49 +1808,48 @@
           status.textContent = `You: "${question}"\n🤖 Starting walkthrough...`;
 
           // Play steps one by one, fully blocking
-          async function playStep(i) {
-            if (i >= data.walkthrough.length) {
-              status.textContent = `🤖 Walkthrough complete.`;
-              return;
-            }
+          // Use Web Audio API for precise sequential playback
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+          for (let i = 0; i < data.walkthrough.length; i++) {
             const step = data.walkthrough[i];
+
+            // 1. Update status text
             status.textContent = `🤖 [${i+1}/${data.walkthrough.length}] ${step.speech}`;
 
-            // Execute visualization actions first
+            // 2. Execute visualization actions
             if (step.actions) executeActions(step.actions);
 
-            // Wait a moment for the visual to settle
-            await new Promise(r => setTimeout(r, 500));
-
-            // Play audio and wait for it to end
+            // 3. Play audio using AudioContext (precise timing)
             if (step.audio) {
               const bytes = atob(step.audio);
               const arr = new Uint8Array(bytes.length);
               for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-              const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
-              const audioUrl = URL.createObjectURL(audioBlob);
-              const audio = new Audio(audioUrl);
 
-              // Wait until audio ends
               try {
-                await audio.play();
-                // Now wait for the ended event
-                await new Promise(r => { audio.onended = r; });
-              } catch {}
+                const audioBuffer = await audioCtx.decodeAudioData(arr.buffer.slice(0));
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
 
-              URL.revokeObjectURL(audioUrl);
-              // Pause after audio finishes
+                // Play and wait for onended
+                await new Promise(resolve => {
+                  source.onended = resolve;
+                  source.start(0);
+                });
+              } catch {
+                // Fallback: wait estimated time
+                await new Promise(r => setTimeout(r, 3000));
+              }
+
+              // Pause between steps
               await new Promise(r => setTimeout(r, 1500));
             } else {
-              // No audio, just wait the delay
               await new Promise(r => setTimeout(r, (step.delay || 4) * 1000));
             }
-
-            // Next step
-            await playStep(i + 1);
           }
 
-          await playStep(0);
+          audioCtx.close();
           return;
       }
 
