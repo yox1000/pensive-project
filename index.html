@@ -339,7 +339,7 @@
       group.add(model);
       scene.add(group);
 
-      camera.position.set(0, 0, maxDim * 4.0);
+      camera.position.set(0, 0, maxDim * 1.5);
       camera.far = maxDim * 5;
       camera.updateProjectionMatrix();
 
@@ -585,7 +585,7 @@
       window._medlensModel = modelGroup;
 
       // Position camera based on actual model size
-      camera.position.set(0, 0, maxDim * 0.8);
+      camera.position.set(0, 0, maxDim * 1.0);
       camera.far = maxDim * 5;
       camera.updateProjectionMatrix();
       // Move lights to match model scale
@@ -700,10 +700,22 @@
       'lung_upper_lobe_right': 'right_upper', 'lung_middle_lobe_right': 'right_middle',
       'lung_lower_lobe_right': 'right_lower', 'trachea': 'trachea', 'esophagus': 'esophagus',
       'aorta': 'aorta', 'heart': 'heart',
+      // Leg muscle groups (multiple keywords)
+      'quadriceps': 'rectus_femoris|vastus',
+      'hamstrings': 'biceps_femoris|semimembranosus|semitendinosus',
+      'adductors': 'adductor|gracilis',
+      'calf_muscles': 'gastrocnemius|soleus',
+      'femur': 'femur',
+      'tibia': 'tibia',
+      'hip_bone': 'hip_bone',
+      'sacrum': 'sacrum',
+      'sartorius': 'sartorius',
+      'iliotibial_band': 'iliotibial',
+      'tibialis_anterior': 'tibialis_anterior',
     };
 
     const keyword = keywordMap[name] || lower;
-    console.log('[HIGHLIGHT] name:', name, 'keyword:', keyword);
+    const keywords = keyword.split('|');
     let matchCount = 0, totalMeshes = 0;
 
     // Special case: "brain" highlights everything, "skull" has no mesh
@@ -713,8 +725,8 @@
       if (child.isMesh) {
         totalMeshes++;
         const childLower = (child.name || '').toLowerCase();
-        // Match by keyword OR special keywords for brainstem (includes medulla)
-        let isMatch = highlightAll || child.name === name || childLower.includes(keyword);
+        // Match by any keyword in the list
+        let isMatch = highlightAll || child.name === name || keywords.some(kw => childLower.includes(kw));
         if (!isMatch && name === 'brainstem') isMatch = childLower.includes('medulla');
         if (!isMatch && name === 'spinal_cord') isMatch = childLower.includes('medulla');
         if (isMatch) matchCount++;
