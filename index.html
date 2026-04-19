@@ -1954,6 +1954,8 @@
           }
 
           audioCtx.close();
+          // Reset view after walkthrough
+          executeActions([{ type: 'show_all' }]);
           return;
       }
 
@@ -1966,7 +1968,11 @@
       const audioBlob = await res.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
-      audio.onended = () => URL.revokeObjectURL(audioUrl);
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        // Reset view after answer finishes
+        executeActions([{ type: 'show_all' }]);
+      };
       audio.play().catch(() => {});
     } catch (err) {
       status.textContent = `Error: ${err.message}`;
