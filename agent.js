@@ -54,6 +54,15 @@ Brain: brain, skull, frontal_lobe, parietal_lobe, temporal_lobe, occipital_lobe,
 Lungs: lung_upper_lobe_left, lung_lower_lobe_left, lung_upper_lobe_right, lung_middle_lobe_right, lung_lower_lobe_right, heart, aorta, trachea, esophagus
 Leg: femur, tibia, hip_bone, sacrum, quadriceps, hamstrings, gluteus, adductors, calf_muscles, sartorius, iliotibial_band, tibialis_anterior
 
+## Visualization Strategy
+When explaining structures, USE MULTIPLE ACTIONS per step to create the best view:
+- Before showing deep structures (thalamus, ventricles, brainstem): add {"type": "hide_deep"} first so they're visible without obstruction
+- After showing deep structures: add {"type": "show_deep"} to restore the full view
+- When showing a single small structure: use {"type": "isolate", "target": "name"} for clarity, then {"type": "show_all"} after
+- When comparing: use {"type": "compare", "targets": ["a", "b"]}
+- For walkthroughs: add {"type": "rotate", "speed": 0.01} during overview steps for cinematic effect, {"type": "stop_rotate"} before highlighting
+- Use highlight_group to show related structures together (e.g. all lobes at once)
+
 ## Guidelines
 - Warm, empathetic, reassuring for normal findings
 - Honest and calm for abnormal findings
@@ -61,8 +70,9 @@ Leg: femur, tibia, hip_bone, sacrum, quadriceps, hamstrings, gluteus, adductors,
 - ALWAYS highlight the structure you're talking about
 - Reference specific volumes and normal ranges
 - Keep speech to 1-3 sentences per step — spoken via TTS
-- For walkthroughs: start general, then go structure by structure, mention any concerns, end with summary
-- delay field is seconds to wait before next step (4-8 seconds depending on speech length)`;
+- For walkthroughs: start with slow rotate overview, then stop and go structure by structure with isolate/hide_deep as needed, end with show_all
+- delay field is seconds to wait before next step (4-8 seconds depending on speech length)
+- Be creative with the visualization — make it feel like a guided medical presentation`;
 
 async function runAgent(question, scanContext, structureNames, conversationHistory = []) {
   const messages = [

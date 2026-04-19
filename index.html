@@ -1739,12 +1739,12 @@
 
         case 'isolate':
           if (act.target) {
-            const kwMap = window._highlightKeywordMap || {};
-            const kw = (kwMap[act.target] || act.target.toLowerCase()).split('|');
+            const isoKw = (GLOBAL_KW_MAP[act.target] || GLOBAL_KW_MAP[act.target.toLowerCase()] || act.target.toLowerCase()).split('|');
+            const isAll = act.target === 'brain' || act.target === 'skull';
             model.traverse(child => {
               if (child.isMesh) {
                 const cn = (child.name || '').toLowerCase();
-                child.visible = kw.some(k => cn.includes(k));
+                child.visible = isAll || isoKw.some(k => cn.includes(k));
               }
             });
           }
@@ -1757,11 +1757,11 @@
           break;
 
         case 'rotate':
-          if (window._arModel) {
-            const speed = act.speed || 0.02;
-            window._agentRotate = setInterval(() => {
-              window._arModel.rotation.y += speed;
-            }, 16);
+          if (window._agentRotate) clearInterval(window._agentRotate);
+          const rotSpeed = act.speed || 0.01;
+          const rotModel = window._arModel || window._medlensModel;
+          if (rotModel) {
+            window._agentRotate = setInterval(() => { rotModel.rotation.y += rotSpeed; }, 16);
           }
           break;
 
