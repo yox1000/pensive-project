@@ -737,10 +737,11 @@
         const childNameLower = (child.name || '').toLowerCase();
         const isDeepStruct = deepNames.some(d => childNameLower.includes(d));
         if (!isDeepStruct || deepVisible) child.visible = true;
+        const hlColor = STRUCTURE_COLORS[name] || STRUCTURE_COLORS[name?.toLowerCase()] || 0x3388ff;
         if (isMatch) {
           child.material.opacity = 1.0;
-          child.material.emissive = new THREE.Color(0x2288ff);
-          child.material.emissiveIntensity = 0.6;
+          child.material.emissive = new THREE.Color(hlColor);
+          child.material.emissiveIntensity = 0.5;
         } else {
           child.material.opacity = 0.06;
           child.material.emissive = new THREE.Color(0x000000);
@@ -749,6 +750,9 @@
         child.material.needsUpdate = true;
       }
     });
+
+    // Auto-rotate to face the highlighted structure
+    if (matchCount > 0) faceStructure(name);
 
     // If nothing matched, reset all to default
     if (matchCount === 0) {
@@ -1020,6 +1024,61 @@
 
   // Toggle deep brain structures visibility
   let deepVisible = true;
+
+  // Structure → best viewing angle (Y rotation in radians to face camera)
+  // 0 = front, PI = back, PI/2 = right side, -PI/2 = left side
+  const STRUCTURE_VIEW_ANGLE = {
+    'frontal_lobe': 0, 'parietal_lobe': Math.PI * 0.3, 'temporal_lobe': Math.PI / 2,
+    'occipital_lobe': Math.PI, 'cerebellum': Math.PI * 0.85, 'brainstem': Math.PI * 0.7,
+    'thalamus': 0, 'caudate_nucleus': 0, 'lentiform_nucleus': 0.2,
+    'ventricle': Math.PI * 0.25, 'insular_cortex': Math.PI / 2,
+    'internal_capsule': 0, 'subarachnoid_space': 0, 'venous_sinuses': Math.PI * 0.5,
+    'septum_pellucidum': 0, 'central_sulcus': Math.PI * 0.15, 'spinal_cord': Math.PI,
+    'brain': 0, 'skull': 0,
+    // Lungs
+    'lung_upper_lobe_left': -0.3, 'lung_lower_lobe_left': -0.5,
+    'lung_upper_lobe_right': 0.3, 'lung_middle_lobe_right': 0.4,
+    'lung_lower_lobe_right': 0.5, 'heart': 0, 'aorta': 0.2, 'trachea': Math.PI,
+    // Leg
+    'femur': 0, 'tibia': 0, 'quadriceps': 0, 'hamstrings': Math.PI,
+    'gluteus': Math.PI * 0.7, 'calf_muscles': Math.PI, 'adductors': Math.PI / 2,
+    'sartorius': 0.3, 'iliotibial_band': Math.PI / 2,
+  };
+
+  // Structure → highlight color (contextual, not just blue)
+  const STRUCTURE_COLORS = {
+    'frontal_lobe': 0xff6644, 'parietal_lobe': 0x44cc66, 'temporal_lobe': 0xffaa22,
+    'occipital_lobe': 0x4488ff, 'cerebellum': 0xff8844, 'brainstem': 0xcc44aa,
+    'thalamus': 0x22ccaa, 'ventricle': 0x4466ff, 'insular_cortex': 0xff6688,
+    'heart': 0xff3344, 'aorta': 0xcc2222, 'trachea': 0x44dd88,
+    'lung_upper_lobe_left': 0x5599ff, 'lung_lower_lobe_left': 0x3377dd,
+    'lung_upper_lobe_right': 0xff8855, 'lung_middle_lobe_right': 0xffaa44,
+    'lung_lower_lobe_right': 0xdd6633,
+    'femur': 0xeeddcc, 'tibia': 0xddccbb, 'quadriceps': 0xdd4444,
+    'hamstrings': 0xcc3355, 'calf_muscles': 0xdd5566, 'gluteus': 0xcc4466,
+  };
+
+  // Smooth rotate model to show a structure
+  function faceStructure(name) {
+    const model = window._arModel || window._medlensModel;
+    if (!model) return;
+    const targetAngle = STRUCTURE_VIEW_ANGLE[name] || STRUCTURE_VIEW_ANGLE[name?.toLowerCase()] || 0;
+    // Smooth rotation over 600ms
+    const startAngle = model.rotation.y;
+    let diff = targetAngle - startAngle;
+    // Normalize to shortest path
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const startTime = performance.now();
+    const duration = 600;
+    function animateRotation(now) {
+      const t = Math.min((now - startTime) / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+      model.rotation.y = startAngle + diff * ease;
+      if (t < 1) requestAnimationFrame(animateRotation);
+    }
+    requestAnimationFrame(animateRotation);
+  }
 
   // Global keyword map for structure → mesh matching (shared by all highlight functions)
   const GLOBAL_KW_MAP = {
@@ -1469,9 +1528,10 @@
                 child.material.side = THREE.DoubleSide;
                 child._arMatCloned = true;
               }
+              const arHlColor = STRUCTURE_COLORS[name] || STRUCTURE_COLORS[name?.toLowerCase()] || 0x3388ff;
               if (isMatch) {
                 child.material.opacity = 1.0;
-                child.material.emissive = new THREE.Color(0x3388ff);
+                child.material.emissive = new THREE.Color(arHlColor);
                 child.material.emissiveIntensity = 0.5;
               } else {
                 child.material.opacity = 0.1;
@@ -1670,7 +1730,7 @@
     for (const act of actions) {
       switch (act.type) {
         case 'highlight':
-          if (act.target) highlightARStructure(act.target);
+          if (act.target) { highlightARStructure(act.target); faceStructure(act.target); }
           break;
 
         case 'highlight_status':
