@@ -1804,28 +1804,51 @@
         isWalkthrough = !!(data && data.walkthrough);
       } catch { /* not JSON, it's audio */ }
 
-      if (isWalkthrough && data) {
-        if (data.walkthrough) {
+      if (isWalkthrough && data && data.walkthrough) {
           status.textContent = `You: "${question}"\n🤖 Starting walkthrough...`;
-          for (let i = 0; i < data.walkthrough.length; i++) {
+
+          // Play steps one by one, fully blocking
+          async function playStep(i) {
+            if (i >= data.walkthrough.length) {
+              status.textContent = `🤖 Walkthrough complete.`;
+              return;
+            }
             const step = data.walkthrough[i];
             status.textContent = `🤖 [${i+1}/${data.walkthrough.length}] ${step.speech}`;
+
+            // Execute visualization actions first
             if (step.actions) executeActions(step.actions);
+
+            // Wait a moment for the visual to settle
+            await new Promise(r => setTimeout(r, 500));
+
+            // Play audio and wait for it to finish completely
             if (step.audio) {
-              const audioBlob = new Blob([Uint8Array.from(atob(step.audio), c => c.charCodeAt(0))], { type: 'audio/mpeg' });
-              const audioUrl = URL.createObjectURL(audioBlob);
-              const audio = new Audio(audioUrl);
-              await new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; audio.play().catch(resolve); });
-              URL.revokeObjectURL(audioUrl);
+              await new Promise(resolve => {
+                try {
+                  const bytes = atob(step.audio);
+                  const arr = new Uint8Array(bytes.length);
+                  for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
+                  const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
+                  const audioUrl = URL.createObjectURL(audioBlob);
+                  const audio = new Audio(audioUrl);
+                  audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                  audio.onerror = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                  const playPromise = audio.play();
+                  if (playPromise) playPromise.catch(() => resolve());
+                } catch { resolve(); }
+              });
             }
-            // Wait before next step
-            if (i < data.walkthrough.length - 1) {
-              await new Promise(r => setTimeout(r, (step.delay || 2) * 1000));
-            }
+
+            // Pause between steps
+            await new Promise(r => setTimeout(r, (step.delay || 2) * 1000));
+
+            // Next step
+            await playStep(i + 1);
           }
-          status.textContent = `🤖 Walkthrough complete.`;
+
+          await playStep(0);
           return;
-        }
       }
 
       // Single response mode
