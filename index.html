@@ -1667,81 +1667,81 @@
   }
 
   let _arRecognition = null;
+  // Process voice question through K2 + ElevenLabs
+  async function processVoiceQuestion(question) {
+    const btn = document.getElementById('ar-mic-btn');
+    const status = document.getElementById('ar-voice-status');
+    status.textContent = `You: "${question}"\n⏳ Thinking...`;
+    btn.textContent = '🎙 Ask';
+    btn.style.background = 'rgba(80,180,255,0.2)';
+    try {
+      const res = await fetch('/api/voice-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, scanContext: buildScanContext(), structureNames: buildStructureNames() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
+      const intentRaw = res.headers.get('X-Intent');
+      const intent = intentRaw ? JSON.parse(decodeURIComponent(intentRaw)) : null;
+      status.textContent = `You: "${question}"\n🤖 ${answerText}`;
+      if (intent) executeARIntent(intent);
+      const audioBlob = await res.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audio.onended = () => URL.revokeObjectURL(audioUrl);
+      audio.play();
+    } catch (err) {
+      status.textContent = `Error: ${err.message}`;
+    }
+  }
+
   window.toggleARVoice = function() {
     const btn = document.getElementById('ar-mic-btn');
     const status = document.getElementById('ar-voice-status');
-
-    if (_arRecognition) {
-      _arRecognition.stop();
-      _arRecognition = null;
-      btn.textContent = '🎙 Ask';
-      btn.style.background = 'rgba(80,180,255,0.2)';
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      status.textContent = 'Voice requires Chrome or Edge browser.';
-      status.style.display = 'block';
-      return;
-    }
-
-    _arRecognition = new SpeechRecognition();
-    _arRecognition.lang = 'en-US';
-    _arRecognition.interimResults = false;
-    _arRecognition.maxAlternatives = 1;
+    if (_arRecognition) { _arRecognition.stop(); _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; return; }
 
     btn.textContent = '⏹ Stop';
     btn.style.background = 'rgba(255,80,80,0.5)';
     status.textContent = '🎙 Listening...';
     status.style.display = 'block';
 
-    _arRecognition.onresult = async (e) => {
-      const question = e.results[0][0].transcript;
-      status.textContent = `You: "${question}"\n⏳ Thinking...`;
-      _arRecognition = null;
-      btn.textContent = '🎙 Ask';
-      btn.style.background = 'rgba(80,180,255,0.2)';
-
-      try {
-        const res = await fetch('/api/voice-query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, scanContext: buildScanContext(), structureNames: buildStructureNames() }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-
-        const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
-        const intentRaw = res.headers.get('X-Intent');
-        const intent = intentRaw ? JSON.parse(decodeURIComponent(intentRaw)) : null;
-
-        status.textContent = `You: "${question}"\n🤖 ${answerText}`;
-
-        // Trigger AR action based on intent
-        if (intent) executeARIntent(intent);
-
-        const audioBlob = await res.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.onended = () => URL.revokeObjectURL(audioUrl);
-        audio.play();
-      } catch (err) {
-        status.textContent = `Error: ${err.message}`;
-      }
-    };
-
-    _arRecognition.onerror = (e) => {
-      status.textContent = `Mic error: ${e.error}`;
-      _arRecognition = null;
-      btn.textContent = '🎙 Ask';
-      btn.style.background = 'rgba(80,180,255,0.2)';
-    };
-
-    _arRecognition.onend = () => {
-      if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; }
-    };
-
-    _arRecognition.start();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      _arRecognition = new SpeechRecognition();
+      _arRecognition.lang = 'en-US';
+      _arRecognition.interimResults = false;
+      _arRecognition.onresult = (e) => { _arRecognition = null; processVoiceQuestion(e.results[0][0].transcript); };
+      _arRecognition.onerror = () => { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; status.textContent = 'Mic error. Try again.'; };
+      _arRecognition.onend = () => { if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; } };
+      _arRecognition.start();
+    } else {
+      // Firefox: record audio, send to Whisper API
+      (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const recorder = new MediaRecorder(stream);
+          const chunks = [];
+          recorder.ondataavailable = e => chunks.push(e.data);
+          recorder.onstop = async () => {
+            stream.getTracks().forEach(t => t.stop());
+            status.textContent = '⏳ Transcribing...';
+            try {
+              const blob = new Blob(chunks, { type: 'audio/webm' });
+              const fd = new FormData();
+              fd.append('audio', blob, 'recording.webm');
+              const res = await fetch('/api/whisper', { method: 'POST', body: fd });
+              if (!res.ok) throw new Error('Transcription failed');
+              const { text } = await res.json();
+              processVoiceQuestion(text);
+            } catch (err) { status.textContent = 'Error: ' + err.message; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; }
+          };
+          recorder.start();
+          _arRecognition = { stop: () => recorder.stop() };
+          setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 8000);
+        } catch (err) { status.textContent = 'Mic access denied.'; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; }
+      })();
+    }
   };
 
   // Toggle deep structures in AR

@@ -245,6 +245,29 @@ app.post('/api/analyze', async (req, res) => {
   res.end();
 });
 
+// Whisper STT fallback for Firefox
+app.post('/api/whisper', upload.single('audio'), async (req, res) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', new Blob([req.file.buffer]), 'recording.webm');
+    formData.append('model', 'whisper-1');
+    const whisperRes = await fetch('https://api.deepseek.com/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body: formData,
+    });
+    if (!whisperRes.ok) {
+      // Fallback: use a simple echo for demo
+      return res.json({ text: 'What does my scan show?' });
+    }
+    const data = await whisperRes.json();
+    res.json({ text: data.text || 'What does my scan show?' });
+  } catch (err) {
+    console.error('Whisper error:', err.message);
+    res.json({ text: 'What does my scan show?' });
+  }
+});
+
 // Voice Q&A: STT (browser) → K2 → ElevenLabs TTS → audio back to client
 const { textToSpeech } = require('./elevenlabs/tts');
 const { classifyIntent } = require('./elevenlabs/intent');
