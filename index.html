@@ -158,6 +158,33 @@
 
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .loading { animation: pulse 1.5s ease-in-out infinite; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      #viewer-screen.active {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: 40vh 40vh auto !important;
+      }
+      #niivue-panel { border-right: none !important; border-bottom: 1px solid rgba(80,180,255,0.15); }
+      #info-panel {
+        flex-direction: column !important;
+        max-height: none !important;
+        padding: 12px !important;
+      }
+      #info-panel > div { min-width: 0 !important; }
+      .upload-box { width: 90vw !important; max-width: 400px !important; height: 160px !important; }
+      #organ-panel { padding: 10px 14px !important; }
+      .structure-item { font-size: 0.75rem !important; }
+    }
+
+    @media (max-width: 480px) {
+      #viewer-screen.active {
+        grid-template-rows: 35vh 35vh auto !important;
+      }
+      .upload-box { height: 140px !important; }
+      .upload-label { font-size: 0.95rem !important; }
+      #info-panel { gap: 12px !important; }
+    }
   </style>
 </head>
 <body>
