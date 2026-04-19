@@ -268,72 +268,39 @@ app.post('/api/whisper', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Voice Q&A: STT (browser) → K2 → ElevenLabs TTS → audio back to client
+// Voice Q&A: Agent-powered with visualization control
 const { textToSpeech } = require('./elevenlabs/tts');
-const { classifyIntent } = require('./elevenlabs/intent');
+const { runAgent } = require('./agent');
 
-const VOICE_SYSTEM_PROMPT = `You are a medical AI assistant helping a patient understand their brain scan in AR.
-Answer in 1-2 plain spoken sentences. No bullet points, no markdown, no medical jargon.
-Be warm, clear, and concise — this will be spoken aloud.`;
+// Conversation history per session (simple in-memory)
+const sessions = {};
 
 app.post('/api/voice-query', async (req, res) => {
-  const { question, scanContext, structureNames } = req.body;
+  const { question, scanContext, structureNames, sessionId } = req.body;
   if (!question) return res.status(400).json({ error: 'question is required' });
 
+  // Get/create conversation history
+  const sid = sessionId || 'default';
+  if (!sessions[sid]) sessions[sid] = [];
+
   try {
-    const userMessage = scanContext
-      ? `Brain scan data: ${scanContext}\n\nPatient question: ${question}`
-      : question;
+    // Run the agent
+    const result = await runAgent(question, scanContext, structureNames, sessions[sid]);
 
-    // Run K2 + Gemini intent classification in parallel
-    const [k2Res, intentResult] = await Promise.allSettled([
-      fetch(process.env.K2_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.K2_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.K2_MODEL,
-          messages: [
-            { role: 'system', content: VOICE_SYSTEM_PROMPT },
-            { role: 'user', content: userMessage },
-          ],
-          stream: false,
-          max_tokens: 4000,
-        }),
-      }),
-      classifyIntent(question, structureNames || []),
-    ]);
+    // Store in conversation history
+    sessions[sid].push({ role: 'user', content: question });
+    sessions[sid].push({ role: 'assistant', content: result.speech });
+    if (sessions[sid].length > 12) sessions[sid] = sessions[sid].slice(-12);
 
-    // Extract K2 answer
-    if (k2Res.status === 'rejected') throw new Error(`K2 error: ${k2Res.reason}`);
-    const k2Data = await k2Res.value.json();
-    let raw = k2Data.choices?.[0]?.message?.content || '';
-    // Strip thinking and extract clean answer
-    if (raw.includes('</think>')) raw = raw.split('</think>').pop();
-    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[""''\\"`]/g, '').trim();
-    const firstYour = raw.indexOf('Your ');
-    let answer = firstYour >= 0 ? raw.substring(firstYour) : raw;
-    const sentences = answer.match(/[^.!?]+[.!?]+/g) || [answer];
-    answer = sentences
-      .filter(s => s.trim().length > 15 && !/\b(sentence|template|format|output|instruction)\b/i.test(s))
-      .slice(0, 3).join(' ').trim();
-    if (!answer) answer = 'Your scan results appear within normal parameters. Please consult your doctor for a full assessment.';
-
-    // Extract intent (non-fatal if Gemini fails)
-    const intent = intentResult.status === 'fulfilled' ? intentResult.value : { intent: 'overview', structure: null, action: 'none' };
-    console.log('Intent:', JSON.stringify(intent));
-
-    // Convert answer to speech
-    const audioBuffer = await textToSpeech(answer);
+    // Convert speech to audio
+    const audioBuffer = await textToSpeech(result.speech);
 
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('X-Answer-Text', encodeURIComponent(answer));
-    res.setHeader('X-Intent', encodeURIComponent(JSON.stringify(intent)));
+    res.setHeader('X-Answer-Text', encodeURIComponent(result.speech));
+    res.setHeader('X-Actions', encodeURIComponent(JSON.stringify(result.actions)));
     res.send(Buffer.from(audioBuffer));
   } catch (err) {
-    console.error('Voice query error:', err.message);
+    console.error('Agent error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

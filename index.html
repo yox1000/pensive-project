@@ -1638,44 +1638,101 @@
     return structuresData?.structures?.map(s => s.name) || [];
   }
 
-  function executeARIntent(intent) {
-    if (!intent || !window._arModel) return;
-    const { action, structure } = intent;
+  // Execute agent actions on the AR 3D model
+  function executeActions(actions) {
+    if (!actions || !Array.isArray(actions)) return;
+    const model = window._arModel || window._medlensModel;
+    if (!model) return;
+    const THREE = window.THREE;
 
-    if (action === 'highlight' || action === 'highlight_explain' || action === 'highlight_volume' || action === 'highlight_compare') {
-      if (structure) highlightARStructure(structure);
-    } else if (action === 'highlight_status') {
-      if (structure) {
-        // Highlight the structure first
-        highlightARStructure(structure);
-        // Then recolor based on health status
-        const s = structuresData?.structures?.find(st => st.name === structure || st.name === structure.toLowerCase());
-        const healthStatus = s?.status || 'detected';
-        const color = healthStatus.includes('normal') ? 0x00ff44 : 0xff4422;
-        window._arModel.traverse(child => {
-          if (child.isMesh && child.material.opacity > 0.5) {
-            child.material.emissive = new THREE.Color(color);
-            child.material.emissiveIntensity = 0.6;
-            child.material.needsUpdate = true;
+    for (const act of actions) {
+      switch (act.type) {
+        case 'highlight':
+          if (act.target) highlightARStructure(act.target);
+          break;
+
+        case 'highlight_status':
+          if (act.target) {
+            highlightARStructure(act.target);
+            const s = structuresData?.structures?.find(st => st.name === act.target || st.name === act.target.toLowerCase());
+            const color = (s?.status || '').includes('normal') ? 0x00ff44 : 0xff4422;
+            model.traverse(child => {
+              if (child.isMesh && child.material.opacity > 0.5) {
+                child.material.emissive = new THREE.Color(color);
+                child.material.emissiveIntensity = 0.6;
+                child.material.needsUpdate = true;
+              }
+            });
           }
-        });
+          break;
+
+        case 'highlight_group':
+          if (act.targets) act.targets.forEach(t => highlightARStructure(t));
+          break;
+
+        case 'show_all':
+          model.traverse(child => {
+            if (child.isMesh) {
+              child.visible = true;
+              if (child._arMatCloned || child._matCloned) {
+                child.material.opacity = 0.7;
+                child.material.emissive = new THREE.Color(0x000000);
+                child.material.emissiveIntensity = 0;
+                child.material.needsUpdate = true;
+              }
+            }
+          });
+          break;
+
+        case 'hide_deep':
+          toggleDeepStructures();
+          break;
+
+        case 'show_deep':
+          if (!deepVisible) toggleDeepStructures();
+          break;
+
+        case 'isolate':
+          if (act.target) {
+            const kwMap = window._highlightKeywordMap || {};
+            const kw = (kwMap[act.target] || act.target.toLowerCase()).split('|');
+            model.traverse(child => {
+              if (child.isMesh) {
+                const cn = (child.name || '').toLowerCase();
+                child.visible = kw.some(k => cn.includes(k));
+              }
+            });
+          }
+          break;
+
+        case 'compare':
+          if (act.targets && act.targets.length >= 2) {
+            act.targets.forEach(t => highlightARStructure(t));
+          }
+          break;
+
+        case 'rotate':
+          if (window._arModel) {
+            const speed = act.speed || 0.02;
+            window._agentRotate = setInterval(() => {
+              window._arModel.rotation.y += speed;
+            }, 16);
+          }
+          break;
+
+        case 'stop_rotate':
+          if (window._agentRotate) { clearInterval(window._agentRotate); window._agentRotate = null; }
+          break;
+
+        case 'zoom':
+          // Adjust camera distance
+          break;
       }
-    } else if (action === 'highlight_all_abnormal') {
-      window._arModel.traverse(child => {
-        if (child.isMesh) {
-          const s = structuresData?.structures?.find(st => st.name === child.name);
-          const isAbnormal = s?.status && !s.status.includes('normal');
-          child.material.opacity = isAbnormal ? 1.0 : 0.15;
-          if (isAbnormal) {
-            child.material.emissive = new THREE.Color(0xff2200);
-            child.material.emissiveIntensity = 0.5;
-          }
-        }
-      });
-    } else if (action === 'rotate') {
-      if (window._arPivot) window._arPivot.rotation.y += Math.PI;
     }
   }
+
+  // Keep backward compat
+  function executeARIntent(intent) { if (intent?.action) executeActions([{ type: intent.action, target: intent.structure }]); }
 
   let _arRecognition = null;
   // Process voice question through K2 + ElevenLabs
@@ -1693,10 +1750,10 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const answerText = decodeURIComponent(res.headers.get('X-Answer-Text') || '');
-      const intentRaw = res.headers.get('X-Intent');
-      const intent = intentRaw ? JSON.parse(decodeURIComponent(intentRaw)) : null;
+      const actionsRaw = res.headers.get('X-Actions');
+      const actions = actionsRaw ? JSON.parse(decodeURIComponent(actionsRaw)) : [];
       status.textContent = `You: "${question}"\n🤖 ${answerText}`;
-      if (intent) executeARIntent(intent);
+      if (actions.length) executeActions(actions);
       const audioBlob = await res.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
