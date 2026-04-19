@@ -1434,7 +1434,7 @@
           return visibleHit ? visibleHit.object.name : null;
         }
 
-        function highlightARStructure(name) {
+        window.highlightARStructure = function(name) {
           arModel.traverse(child => {
             if (child.isMesh) {
               if (child.name === name) {
