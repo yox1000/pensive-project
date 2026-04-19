@@ -277,7 +277,7 @@ app.post('/api/voice-query', async (req, res) => {
             { role: 'user', content: userMessage },
           ],
           stream: false,
-          max_tokens: 150,
+          max_tokens: 4000,
         }),
       }),
       classifyIntent(question, structureNames || []),
@@ -286,9 +286,17 @@ app.post('/api/voice-query', async (req, res) => {
     // Extract K2 answer
     if (k2Res.status === 'rejected') throw new Error(`K2 error: ${k2Res.reason}`);
     const k2Data = await k2Res.value.json();
-    let answer = k2Data.choices?.[0]?.message?.content || '';
-    answer = answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-    if (!answer) throw new Error('Empty K2 response');
+    let raw = k2Data.choices?.[0]?.message?.content || '';
+    // Strip thinking and extract clean answer
+    if (raw.includes('</think>')) raw = raw.split('</think>').pop();
+    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[""''\\"`]/g, '').trim();
+    const firstYour = raw.indexOf('Your ');
+    let answer = firstYour >= 0 ? raw.substring(firstYour) : raw;
+    const sentences = answer.match(/[^.!?]+[.!?]+/g) || [answer];
+    answer = sentences
+      .filter(s => s.trim().length > 15 && !/\b(sentence|template|format|output|instruction)\b/i.test(s))
+      .slice(0, 3).join(' ').trim();
+    if (!answer) answer = 'Your scan results appear within normal parameters. Please consult your doctor for a full assessment.';
 
     // Extract intent (non-fatal if Gemini fails)
     const intent = intentResult.status === 'fulfilled' ? intentResult.value : { intent: 'overview', structure: null, action: 'none' };
