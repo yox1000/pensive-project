@@ -1031,6 +1031,8 @@
       <div style="position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:8px;">
         <button id="ar-mic-btn" onclick="toggleARVoice()" style="padding:8px 16px;background:rgba(80,180,255,0.2);border:1px solid rgba(80,180,255,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">🎙 Ask</button>
         <button id="ar-axis-btn" onclick="toggleARAxis()" style="padding:8px 16px;background:rgba(80,255,180,0.2);border:1px solid rgba(80,255,180,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">↔ Y-Axis</button>
+        <button id="ar-cinematic-btn" onclick="toggleARCinematic()" style="padding:8px 16px;background:rgba(255,200,80,0.2);border:1px solid rgba(255,200,80,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">🎬 Cinematic</button>
+        <button id="ar-record-btn" onclick="toggleARRecord()" style="padding:8px 16px;background:rgba(255,80,80,0.2);border:1px solid rgba(255,80,80,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">⏺ Record</button>
         <button id="ar-deep-btn" onclick="toggleARDeep()" style="padding:8px 16px;background:rgba(180,80,255,0.2);border:1px solid rgba(180,80,255,0.5);color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">Hide Deep</button>
         <button onclick="closeMarkerAR()" style="padding:8px 16px;background:rgba(255,60,60,0.8);border:none;color:white;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close AR</button>
       </div>
@@ -1127,6 +1129,63 @@
       const btn = document.getElementById('ar-axis-btn');
       btn.textContent = arRotateAxis === 'y' ? '↔ Y-Axis' : '↕ X-Axis';
     };
+
+    // Cinematic mode: black bg + auto-rotate
+    let cinematicMode = false;
+    let cinematicRAF = null;
+    const arVideo = document.getElementById('ar-video');
+    window.toggleARCinematic = function() {
+      cinematicMode = !cinematicMode;
+      const btn = document.getElementById('ar-cinematic-btn');
+      const handCanvas = document.getElementById('hand-canvas');
+      const hint = document.querySelector('#ar-overlay > div:last-child');
+      if (cinematicMode) {
+        arVideo.style.opacity = '0';
+        handCanvas.style.opacity = '0';
+        if (hint) hint.style.opacity = '0';
+        btn.style.background = 'rgba(255,200,80,0.6)';
+        btn.textContent = '🎬 Exit Cinematic';
+        (function spin() {
+          pivot.rotation[arRotateAxis] += 0.008;
+          cinematicRAF = requestAnimationFrame(spin);
+        })();
+      } else {
+        arVideo.style.opacity = '1';
+        handCanvas.style.opacity = '1';
+        if (hint) hint.style.opacity = '1';
+        btn.style.background = 'rgba(255,200,80,0.2)';
+        btn.textContent = '🎬 Cinematic';
+        if (cinematicRAF) { cancelAnimationFrame(cinematicRAF); cinematicRAF = null; }
+      }
+    };
+
+    // Record: captures ar-canvas stream → .webm download
+    let mediaRecorder = null;
+    let recordChunks = [];
+    window.toggleARRecord = function() {
+      const btn = document.getElementById('ar-record-btn');
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        const stream = canvas.captureStream(30);
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        recordChunks = [];
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'medlens-brain.webm'; a.click();
+          URL.revokeObjectURL(url);
+          btn.style.background = 'rgba(255,80,80,0.2)';
+          btn.textContent = '⏺ Record';
+        };
+        mediaRecorder.start();
+        btn.style.background = 'rgba(255,80,80,0.7)';
+        btn.textContent = '⏹ Stop';
+      } else {
+        mediaRecorder.stop();
+      }
+    };
+
     window._arScaleHandler = (e) => {
       if (e.key === '+' || e.key === '=') arScale = Math.min(arScale * 1.15, 5);
       else if (e.key === '-') arScale = Math.max(arScale / 1.15, 0.1);
@@ -1571,6 +1630,8 @@
   window.closeMarkerAR = function() {
     const overlay = document.getElementById('ar-overlay');
     if (window._arRAF) cancelAnimationFrame(window._arRAF);
+    if (window._arCinematicRAF) { cancelAnimationFrame(window._arCinematicRAF); window._arCinematicRAF = null; }
+    if (window._arMediaRecorder && window._arMediaRecorder.state !== 'inactive') window._arMediaRecorder.stop();
     const video = document.getElementById('ar-video');
     if (video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
     overlay.style.display = 'none';
