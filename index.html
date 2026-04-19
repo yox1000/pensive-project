@@ -1159,31 +1159,48 @@
       }
     };
 
-    // Record: captures ar-canvas stream → .webm download
+    // Record: spins exactly one full rotation then auto-stops → perfect loop .webm
     let mediaRecorder = null;
     let recordChunks = [];
+    let recordRAF = null;
     window.toggleARRecord = function() {
       const btn = document.getElementById('ar-record-btn');
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-        const stream = canvas.captureStream(30);
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-        recordChunks = [];
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordChunks.push(e.data); };
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordChunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = 'medlens-brain.webm'; a.click();
-          URL.revokeObjectURL(url);
-          btn.style.background = 'rgba(255,80,80,0.2)';
-          btn.textContent = '⏺ Record';
-        };
-        mediaRecorder.start();
-        btn.style.background = 'rgba(255,80,80,0.7)';
-        btn.textContent = '⏹ Stop';
-      } else {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        cancelAnimationFrame(recordRAF); recordRAF = null;
         mediaRecorder.stop();
+        return;
       }
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+      recordChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'medlens-brain.webm'; a.click();
+        URL.revokeObjectURL(url);
+        btn.style.background = 'rgba(255,80,80,0.2)';
+        btn.textContent = '⏺ Record';
+      };
+
+      const step = 0.008;
+      let rotated = 0;
+      mediaRecorder.start();
+      btn.style.background = 'rgba(255,80,80,0.7)';
+      btn.textContent = '⏹ Stop';
+
+      (function spin() {
+        pivot.rotation[arRotateAxis] += step;
+        rotated += step;
+        if (rotated < Math.PI * 2) {
+          recordRAF = requestAnimationFrame(spin);
+        } else {
+          pivot.rotation[arRotateAxis] -= (rotated - Math.PI * 2); // snap to exact start angle
+          mediaRecorder.stop();
+          recordRAF = null;
+        }
+      })();
     };
 
     window._arScaleHandler = (e) => {
