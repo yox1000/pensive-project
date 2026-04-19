@@ -168,9 +168,7 @@
 
     <!-- Logo + title -->
     <div style="display:flex;flex-direction:column;align-items:center;gap:14px;">
-      <video autoplay loop muted playsinline
-        style="width:320px;height:320px;object-fit:contain;border-radius:20px;filter:drop-shadow(0 0 40px rgba(80,180,255,0.35));"
-        src="looping_logo.mp4"></video>
+      <canvas id="hero-brain" style="width:320px;height:320px;border-radius:20px;filter:drop-shadow(0 0 40px rgba(80,180,255,0.35));"></canvas>
       <div style="text-align:center;">
         <div style="font-family:'Georgia',serif;font-size:2rem;font-weight:700;letter-spacing:0.06em;background:linear-gradient(135deg,rgba(180,220,255,0.95),rgba(80,160,255,0.85));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Graphfol</div>
         <div style="font-family:'Segoe UI',system-ui,sans-serif;font-size:0.72rem;color:rgba(120,160,220,0.55);letter-spacing:0.18em;text-transform:uppercase;margin-top:4px;">Daniel Barreras &nbsp;·&nbsp; Jake Barbaresso &nbsp;·&nbsp; Alfredo Leon</div>
@@ -269,6 +267,69 @@
   window.ARButton = ARButton;
   window._threeReady = true;
   console.log('Three.js loaded successfully');
+
+  // Hero rotating brain on landing page
+  (async () => {
+    const canvas = document.getElementById('hero-brain');
+    if (!canvas) return;
+    const w = 320, h = 320;
+    canvas.width = w * 2; canvas.height = h * 2;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(w * 2, h * 2);
+    renderer.setClearColor(0x000000, 0);
+
+    scene.add(new THREE.AmbientLight(0x6080ff, 0.8));
+    const dl1 = new THREE.DirectionalLight(0xffffff, 1.2);
+    dl1.position.set(200, 300, 400);
+    scene.add(dl1);
+    const dl2 = new THREE.DirectionalLight(0x4060ff, 0.6);
+    dl2.position.set(-200, -100, -200);
+    scene.add(dl2);
+
+    try {
+      const gltf = await new Promise((resolve, reject) => {
+        new GLTFLoader().load('/api/mesh/brain_demo_default', resolve, undefined, reject);
+      });
+      const model = gltf.scene;
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      const maxDim = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+
+      // Rotate to face forward
+      const group = new THREE.Group();
+      group.rotation.x = -Math.PI / 2;
+      group.add(model);
+      scene.add(group);
+
+      camera.position.set(0, 0, maxDim * 0.7);
+      camera.far = maxDim * 5;
+      camera.updateProjectionMatrix();
+
+      // Make semi-transparent with glow
+      model.traverse(child => {
+        if (child.isMesh) {
+          child.material = child.material.clone();
+          child.material.transparent = true;
+          child.material.opacity = 0.6;
+          child.material.side = THREE.DoubleSide;
+        }
+      });
+
+      function animate() {
+        if (!document.getElementById('hero-brain')) return;
+        requestAnimationFrame(animate);
+        group.rotation.z += 0.005;
+        renderer.render(scene, camera);
+      }
+      animate();
+    } catch (e) {
+      console.warn('Hero brain load failed:', e.message);
+    }
+  })();
 </script>
 
 <script>
