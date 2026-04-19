@@ -67,7 +67,7 @@
 
     /* Main viewer */
     #viewer-screen { display: none; height: 100vh; }
-    #viewer-screen.active { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 360px; }
+    #viewer-screen.active { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 280px; }
 
     #niivue-panel {
       background: #0a0a1a;
@@ -339,7 +339,7 @@
       group.add(model);
       scene.add(group);
 
-      camera.position.set(0, 0, maxDim * 1.8);
+      camera.position.set(0, 0, maxDim * 3.0);
       camera.far = maxDim * 5;
       camera.updateProjectionMatrix();
 
