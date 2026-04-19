@@ -138,7 +138,89 @@ const SYSTEM_PROMPT = `You are a radiologist writing patient-facing medical repo
 const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';
 const BIMEDIX_MODEL = process.env.BIMEDIX_MODEL || 'BiMediX2-8B-hf';
 
-// Send structure data to BiMediX2 (cluster) with K2 fallback, stream response
+// Full report generation — no stripping, streams complete K2 output
+app.post('/api/report', async (req, res) => {
+  const { medicalAnalysis } = req.body;
+  if (!medicalAnalysis) return res.status(400).json({ error: 'medicalAnalysis is required' });
+
+  const REPORT_PROMPT = `You are a radiologist writing a comprehensive, patient-friendly medical imaging report. Write a detailed structured report with the sections requested. Use specific measurements, reference normal ranges, explain clinical significance. Be thorough — this is the patient's official scan summary. Minimum 300 words.`;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  try {
+    // Use DeepSeek for reports (no thinking dumps, better structured output)
+    const dsRes = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: REPORT_PROMPT },
+          { role: 'user', content: medicalAnalysis },
+        ],
+        stream: true,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!dsRes.ok) throw new Error('DeepSeek failed');
+
+    // Stream directly to client
+    const reader = dsRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data: ')) res.write(line + '\n');
+      }
+    }
+    res.write('data: [DONE]\n');
+  } catch (err) {
+    // Fallback to K2
+    try {
+      const k2Res = await fetch(process.env.K2_API_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.K2_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: process.env.K2_MODEL, messages: [
+          { role: 'system', content: REPORT_PROMPT },
+          { role: 'user', content: medicalAnalysis },
+        ], stream: true, max_tokens: 8000 }),
+      });
+      const reader = k2Res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '', inThink = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value);
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const d = line.slice(6);
+          if (d === '[DONE]') { res.write(line + '\n'); continue; }
+          try {
+            let c = JSON.parse(d).choices?.[0]?.delta?.content || '';
+            if (c.includes('<think>')) inThink = true;
+            if (inThink) { if (c.includes('</think>')) { c = c.split('</think>').pop(); inThink = false; } else continue; }
+            if (c) res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: c } }] }) + '\n');
+          } catch {}
+        }
+      }
+      res.write('data: [DONE]\n');
+    } catch { res.write('data: [DONE]\n'); }
+  }
+  res.end();
+});
+
+// Short organ insights — stripped to 3 sentences
 app.post('/api/analyze', async (req, res) => {
   const { medicalAnalysis } = req.body;
   if (!medicalAnalysis) return res.status(400).json({ error: 'medicalAnalysis is required' });

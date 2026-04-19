@@ -1177,7 +1177,7 @@
     reportPrompt += `\n\n## Instructions\nWrite the report with these sections:\n1. OVERVIEW — 2-3 sentences summarizing the scan and overall impression\n2. FINDINGS — Go through each structure or system, state the volume, whether it is normal, and any clinical notes. Group by anatomical system.\n3. AREAS OF NOTE — Any structures outside normal range or worth monitoring. If everything is normal, say so.\n4. RECOMMENDATION — What the patient should discuss with their doctor, any follow-up suggestions.\n\nUse plain language. Reference specific measurements. Be thorough but not alarming. This is a real patient reading their own report.`;
 
     try {
-      const res = await fetch('/api/analyze', {
+      const res = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ medicalAnalysis: reportPrompt }),
