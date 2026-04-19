@@ -381,6 +381,7 @@
     } else {
       scanMode = 'brain';
     }
+    /*debug*/;
 
     const formData = new FormData();
     formData.append('file', file);
@@ -467,6 +468,7 @@
       w = container.clientWidth || 600;
       h = container.clientHeight || 400;
     }
+    /*debug*/;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x080818);
@@ -549,11 +551,14 @@
 
     // Load GLB
     const loader = new GLTFLoader();
+    /*debug*/;
     try {
       const gltf = await new Promise((resolve, reject) => {
         loader.load(`${BACKEND}/mesh/${scanId}`, resolve,
+          (progress) => { /*progress*/ + '%'); },
           reject);
       });
+      /*debug*/;
 
       const model = gltf.scene;
       const box3 = new THREE.Box3().setFromObject(model);
@@ -651,6 +656,7 @@
       const displayName = s.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       div.innerHTML = `<span>${displayName}</span><span class="structure-vol">${s.volume_ml} mL</span>`;
       div.addEventListener('click', (e) => {
+        /*debug*/;
         document.querySelectorAll('.structure-item').forEach(el => el.classList.remove('selected'));
         div.classList.add('selected');
         highlightStructure(s.name);
@@ -783,10 +789,12 @@
     }
     resetBtn.style.display = matchCount > 0 ? 'block' : 'none';
 
+    /*debug*/;
   }
 
   // --- Organ popup ---
   async function showOrganPopup(structureName, mouseX, mouseY) {
+    /*debug*/;
     const popup = document.getElementById('organ-panel');
     const title = document.getElementById('popup-title');
     const stats = document.getElementById('popup-stats');
@@ -924,18 +932,24 @@
 
         const savedText = text;
         insight.textContent = text + '\n\n⏳ Generating personalized assessment...';
+        /*debug*/;
+        /*debug*/ + '...');
         fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ medicalAnalysis: prompt }),
         }).then(async (k2Res) => {
+          /*debug*/;
+          /*debug*/);
           const reader = k2Res.body.getReader();
           const decoder = new TextDecoder();
           let buf = '', k2 = '', chunkCount = 0;
           while (true) {
             const { done, value } = await reader.read();
+            if (done) { /*debug*/; break; }
             chunkCount++;
             const chunk = decoder.decode(value);
+            /*debug*/);
             buf += chunk;
             const lines = buf.split('\n'); buf = lines.pop();
             for (const line of lines) {
@@ -943,13 +957,17 @@
                 try {
                   const parsed = JSON.parse(line.slice(6));
                   const content = parsed.choices?.[0]?.delta?.content || '';
+                  /*debug*/);
                   k2 += content;
+                } catch (pe) { /*debug*/); }
               }
             }
           }
+          /*debug*/);
           if (k2.trim()) {
             insight.textContent = savedText + '\n\n🤖 ' + k2.trim();
           } else {
+            /*debug*/;
             insight.textContent = savedText;
           }
         }).catch((err) => {
@@ -989,12 +1007,14 @@
       const allStructures = structuresData.structures.map(st => st.name.replace(/_/g,' ') + ': ' + st.volume_ml + ' mL').join(', ');
       const bodyPart = scanMode === 'lung' ? 'respiratory' : scanMode === 'leg' ? 'musculoskeletal' : 'brain';
       const unknownPrompt = `Scan data: ${allStructures}. Patient clicked on: ${displayName}. In 2 sentences, explain what this structure means for the patient's ${bodyPart} health. No reasoning.`;
+      /*debug*/;
       insight.textContent = matched + '\n\n⏳ Generating personalized assessment...';
       fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ medicalAnalysis: unknownPrompt }),
       }).then(async (r) => {
+        /*debug*/;
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
         let buf = '', k2 = '';
@@ -1009,6 +1029,7 @@
             }
           }
         }
+        /*debug*/);
         if (k2.trim()) insight.textContent = matched + '\n\n🤖 ' + k2.trim();
         else insight.textContent = matched;
       }).catch(e => { console.error('[K2] Unknown struct error:', e); insight.textContent = matched; });
@@ -1044,9 +1065,11 @@
           if (shouldToggle) {
             child.visible = deepVisible;
             toggled++;
+            /*debug*/;
           }
         }
       });
+      /*debug*/;
     }
   };
 
