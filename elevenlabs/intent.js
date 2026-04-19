@@ -1,7 +1,6 @@
-// Gemini intent classification for AR voice commands
-// Uses Gemma 4 27B via Gemini API
+// DeepSeek intent classification for AR voice commands
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent`;
+const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 
 const INTENT_SYSTEM = `You are an intent classifier for a brain scan AR viewer.
 Given a user's spoken question and a list of brain structures in their scan, classify the intent and extract the target structure if any.
@@ -26,23 +25,29 @@ Intent → action mapping:
 async function classifyIntent(question, structureNames) {
   const prompt = `Brain structures in this scan: ${structureNames.join(', ')}\n\nUser question: "${question}"\n\nClassify the intent and respond with JSON only.`;
 
-  const res = await fetch(`${GEMINI_URL}?key=${process.env.GEMINI_API_KEY}`, {
+  const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: INTENT_SYSTEM }] },
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 100 },
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: INTENT_SYSTEM },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0,
+      max_tokens: 100,
     }),
   });
 
-  if (!res.ok) throw new Error(`Gemini error: ${await res.text()}`);
+  if (!res.ok) throw new Error(`DeepSeek error: ${await res.text()}`);
   const data = await res.json();
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const raw = data.choices?.[0]?.message?.content || '';
 
-  // Extract JSON from response
   const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON in Gemini response');
+  if (!match) throw new Error('No JSON in DeepSeek response');
   return JSON.parse(match[0]);
 }
 
