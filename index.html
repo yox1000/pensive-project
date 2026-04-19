@@ -1020,6 +1020,28 @@
 
   // Toggle deep brain structures visibility
   let deepVisible = true;
+
+  // Global keyword map for structure → mesh matching (shared by all highlight functions)
+  const GLOBAL_KW_MAP = {
+    'frontal_lobe': 'frontal', 'parietal_lobe': 'parietal',
+    'temporal_lobe': 'temporal', 'occipital_lobe': 'occipital',
+    'cerebellum': 'cerebellum', 'brainstem': 'brainstem|medulla',
+    'thalamus': 'thalamus', 'caudate_nucleus': 'deep_gray',
+    'lentiform_nucleus': 'deep_gray', 'ventricle': 'ventricle',
+    'insular_cortex': 'insul', 'internal_capsule': 'deep_gray',
+    'subarachnoid_space': 'csf', 'venous_sinuses': 'csf',
+    'septum_pellucidum': 'ventricle', 'spinal_cord': 'brainstem|medulla',
+    'quadriceps': 'rectus_femoris|vastus', 'hamstrings': 'biceps_femoris|semimembranosus|semitendinosus',
+    'adductors': 'adductor|gracilis', 'calf_muscles': 'gastrocnemius|soleus',
+    'lung_upper_lobe_left': 'left_upper', 'lung_lower_lobe_left': 'left_lower',
+    'lung_upper_lobe_right': 'right_upper', 'lung_middle_lobe_right': 'right_middle',
+    'lung_lower_lobe_right': 'right_lower', 'trachea': 'trachea', 'esophagus': 'esophagus',
+    'aorta': 'aorta', 'heart': 'heart', 'liver': 'liver', 'spleen': 'spleen',
+    'kidney_right': 'kidney', 'kidney_left': 'kidney', 'stomach': 'stomach', 'pancreas': 'pancreas',
+    'femur': 'femur', 'tibia': 'tibia', 'hip_bone': 'hip_bone', 'sacrum': 'sacrum',
+    'sartorius': 'sartorius', 'iliotibial_band': 'iliotibial', 'tibialis_anterior': 'tibialis_anterior',
+    'gluteus': 'gluteus', 'brain': '*ALL*', 'skull': '*ALL*',
+  };
   const deepNames = ['thalamus', 'deep_gray', 'ventricles', 'brainstem', 'medulla', 'cerebellum'];
   const lungOuterNames = ['upper_lobe', 'lower_lobe', 'middle_lobe', 'heart'];
   const legMuscleNames = ['rectus', 'vastus', 'biceps', 'semimembranosus', 'semitendinosus', 'sartorius', 'adductor', 'gracilis', 'gluteus', 'gastrocnemius', 'soleus', 'tibialis', 'iliotibial', 'fibularis'];
@@ -1667,7 +1689,30 @@
           break;
 
         case 'highlight_group':
-          if (act.targets) act.targets.forEach(t => highlightARStructure(t));
+          if (act.targets && act.targets.length) {
+            // Collect all keywords for all targets
+            const allKw = [];
+            for (const t of act.targets) {
+              const kws = (GLOBAL_KW_MAP[t] || GLOBAL_KW_MAP[t.toLowerCase()] || t.toLowerCase()).split('|');
+              allKw.push(...kws);
+            }
+            model.traverse(child => {
+              if (child.isMesh) {
+                const cn = (child.name || '').toLowerCase();
+                const isMatch = allKw.some(kw => cn.includes(kw));
+                if (!child._arMatCloned) {
+                  child.material = child.material.clone();
+                  child.material.transparent = true;
+                  child.material.side = THREE.DoubleSide;
+                  child._arMatCloned = true;
+                }
+                child.material.opacity = isMatch ? 1.0 : 0.1;
+                child.material.emissive = isMatch ? new THREE.Color(0x3388ff) : new THREE.Color(0x000000);
+                child.material.emissiveIntensity = isMatch ? 0.5 : 0;
+                child.material.needsUpdate = true;
+              }
+            });
+          }
           break;
 
         case 'show_all':
@@ -1749,11 +1794,17 @@
         body: JSON.stringify({ question, scanContext: buildScanContext(), structureNames: buildStructureNames() }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const contentType = res.headers.get('Content-Type') || '';
 
-      if (contentType.includes('application/json')) {
-        // Walkthrough mode: sequential steps
-        const data = await res.json();
+      // Try to detect walkthrough vs single response
+      const resClone = res.clone();
+      let isWalkthrough = false;
+      let data = null;
+      try {
+        data = await resClone.json();
+        isWalkthrough = !!(data && data.walkthrough);
+      } catch { /* not JSON, it's audio */ }
+
+      if (isWalkthrough && data) {
         if (data.walkthrough) {
           status.textContent = `You: "${question}"\n🤖 Starting walkthrough...`;
           for (let i = 0; i < data.walkthrough.length; i++) {
