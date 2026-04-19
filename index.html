@@ -164,29 +164,36 @@
 
 <!-- Upload Screen -->
 <div id="upload-screen">
-  <div style="display:flex;flex-direction:column;align-items:center;gap:32px;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;max-width:800px;width:100%;padding:0 20px;">
 
-    <!-- Logo + title -->
-    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;">
-      <canvas id="hero-brain" style="width:320px;height:320px;border-radius:20px;filter:drop-shadow(0 0 40px rgba(80,180,255,0.35));"></canvas>
-      <div style="text-align:center;">
-        <div style="font-family:'Georgia',serif;font-size:2rem;font-weight:700;letter-spacing:0.06em;background:linear-gradient(135deg,rgba(180,220,255,0.95),rgba(80,160,255,0.85));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Graphfol</div>
-        <div style="font-family:'Segoe UI',system-ui,sans-serif;font-size:0.72rem;color:rgba(120,160,220,0.55);letter-spacing:0.18em;text-transform:uppercase;margin-top:4px;">Daniel Barreras &nbsp;·&nbsp; Jake Barbaresso &nbsp;·&nbsp; Alfredo Leon</div>
+    <!-- Hero: 3D brain + branding side by side -->
+    <div style="display:flex;align-items:center;gap:40px;flex-wrap:wrap;justify-content:center;">
+      <canvas id="hero-brain" style="width:240px;height:240px;border-radius:50%;filter:drop-shadow(0 0 50px rgba(80,140,255,0.4));"></canvas>
+      <div style="text-align:left;">
+        <div style="font-family:'Georgia',serif;font-size:2.8rem;font-weight:700;letter-spacing:0.04em;background:linear-gradient(135deg,rgba(200,230,255,0.95),rgba(80,160,255,0.85));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.1;">Graphfol</div>
+        <div style="font-size:0.95rem;color:rgba(160,200,240,0.7);margin-top:8px;max-width:300px;line-height:1.5;">AI-powered medical scan explorer with 3D visualization and augmented reality</div>
+        <div style="display:flex;gap:12px;margin-top:16px;">
+          <span style="font-size:0.65rem;padding:4px 10px;background:rgba(80,180,255,0.1);border:1px solid rgba(80,180,255,0.2);border-radius:20px;color:rgba(140,190,255,0.8);">Brain</span>
+          <span style="font-size:0.65rem;padding:4px 10px;background:rgba(80,180,255,0.1);border:1px solid rgba(80,180,255,0.2);border-radius:20px;color:rgba(140,190,255,0.8);">Lungs</span>
+          <span style="font-size:0.65rem;padding:4px 10px;background:rgba(80,180,255,0.1);border:1px solid rgba(80,180,255,0.2);border-radius:20px;color:rgba(140,190,255,0.8);">Musculoskeletal</span>
+        </div>
       </div>
     </div>
 
     <!-- Upload box -->
-    <div class="upload-box" id="uploadBox">
-      <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
-        <circle cx="36" cy="36" r="32" stroke="rgba(80,180,255,0.5)" stroke-width="1.5"/>
-        <path d="M24 34c0-6.627 5.373-10 12-10s12 3.373 12 10c0 2-.5 4-1.5 5.5C48 42 48 44 46 46c-1 1-2.5 1.5-4 1l-1 3h-10l-1-3c-1.5.5-3 0-4-1-2-2-2-4-.5-6.5C24.5 38 24 36 24 34Z"
-              stroke="rgba(120,200,255,0.85)" stroke-width="1.5" fill="rgba(80,140,255,0.08)"/>
+    <div class="upload-box" id="uploadBox" style="width:100%;max-width:520px;height:200px;">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <path d="M24 6v28M12 18l12-12 12 12" stroke="rgba(80,180,255,0.6)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M6 32v6a4 4 0 004 4h28a4 4 0 004-4v-6" stroke="rgba(80,180,255,0.4)" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      <span class="upload-label">Upload a medical scan</span>
-      <span class="upload-sub">Supports brain, lung, and musculoskeletal MRI</span>
+      <span class="upload-label">Drop your MRI scan here</span>
+      <span class="upload-sub">Supports brain, lung, and musculoskeletal NIfTI</span>
       <span class="upload-status" id="uploadStatus">Processing scan...</span>
       <input type="file" id="fileInput" accept=".nii,.nii.gz" />
     </div>
+
+    <!-- Credits -->
+    <div style="font-size:0.68rem;color:rgba(120,160,220,0.4);letter-spacing:0.12em;text-transform:uppercase;">Daniel Barreras &nbsp;&middot;&nbsp; Jake Barbaresso &nbsp;&middot;&nbsp; Alfredo Leon</div>
 
   </div>
 </div>
@@ -272,7 +279,7 @@
   (async () => {
     const canvas = document.getElementById('hero-brain');
     if (!canvas) return;
-    const w = 320, h = 320;
+    const w = 240, h = 240;
     canvas.width = w * 2; canvas.height = h * 2;
 
     const scene = new THREE.Scene();
@@ -305,7 +312,7 @@
       group.add(model);
       scene.add(group);
 
-      camera.position.set(0, 0, maxDim * 0.7);
+      camera.position.set(0, 0, maxDim * 1.8);
       camera.far = maxDim * 5;
       camera.updateProjectionMatrix();
 
