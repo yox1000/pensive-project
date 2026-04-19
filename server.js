@@ -132,7 +132,7 @@ app.get('/api/analyze/:scanId', async (req, res) => {
   res.json(data);
 });
 
-const SYSTEM_PROMPT = `You are a radiology assistant. When given scan data, respond with exactly 2 sentences starting with "Your". First sentence states the measurement and if it is normal. Second sentence gives one recommendation. Nothing else.`;
+const SYSTEM_PROMPT = `You are a radiologist writing patient-facing medical reports. When given a short organ query, respond with 2 sentences starting with "Your". When given a full report request with sections (OVERVIEW, FINDINGS, etc.), write the complete structured report as requested. Be thorough, specific with measurements, and use plain language.`;
 
 // BiMediX2 running on local cluster via vLLM
 const BIMEDIX_URL = process.env.BIMEDIX_URL || 'http://localhost:8000/v1/chat/completions';

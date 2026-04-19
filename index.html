@@ -1145,17 +1145,42 @@
     const textDiv = document.getElementById('analysis-text');
     btn.disabled = true;
     textDiv.className = 'loading';
-    textDiv.textContent = 'Generating patient-friendly report...';
+    textDiv.textContent = 'Generating comprehensive report... This may take 10-15 seconds.';
 
-    const medicalSummary = structuresData.structures.map(s =>
-      `Structure: ${s.name}, Volume: ${s.volume_ml} mL, Voxels: ${s.voxel_count}`
-    ).join('\n');
+    // Build rich context with analysis data
+    let analysisData = null;
+    try {
+      const analysisRes = await fetch(`${BACKEND}/analyze/${currentScanId}`);
+      if (analysisRes.ok) analysisData = await analysisRes.json();
+    } catch {}
+
+    const bodyType = scanMode === 'lung' ? 'chest/lung' : scanMode === 'leg' ? 'musculoskeletal leg' : 'brain';
+    let reportPrompt = `Generate a comprehensive ${bodyType} MRI report for a patient. Write it as a structured medical report that is still understandable by a non-specialist.\n\n`;
+    reportPrompt += `## Scan Data\n`;
+    reportPrompt += structuresData.structures.map(s => {
+      const desc = s.description ? ` — ${s.description}` : '';
+      return `- ${s.name.replace(/_/g,' ')}: ${s.volume_ml} mL${desc}`;
+    }).join('\n');
+
+    if (analysisData) {
+      if (analysisData.flags?.length) {
+        reportPrompt += `\n\n## Flagged Findings\n`;
+        reportPrompt += analysisData.flags.map(f =>
+          `- ${f.display_name}: ${f.volume_ml} mL (normal: ${f.normal_range_ml} mL) — ${f.issue} [${f.priority} priority]`
+        ).join('\n');
+      }
+      if (analysisData.medical_summary) {
+        reportPrompt += `\n\n## Automated Analysis\n${analysisData.medical_summary}`;
+      }
+    }
+
+    reportPrompt += `\n\n## Instructions\nWrite the report with these sections:\n1. OVERVIEW — 2-3 sentences summarizing the scan and overall impression\n2. FINDINGS — Go through each structure or system, state the volume, whether it is normal, and any clinical notes. Group by anatomical system.\n3. AREAS OF NOTE — Any structures outside normal range or worth monitoring. If everything is normal, say so.\n4. RECOMMENDATION — What the patient should discuss with their doctor, any follow-up suggestions.\n\nUse plain language. Reference specific measurements. Be thorough but not alarming. This is a real patient reading their own report.`;
 
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ medicalAnalysis: medicalSummary }),
+        body: JSON.stringify({ medicalAnalysis: reportPrompt }),
       });
 
       textDiv.className = '';
