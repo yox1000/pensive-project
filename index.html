@@ -1822,44 +1822,29 @@
             // Wait a moment for the visual to settle
             await new Promise(r => setTimeout(r, 500));
 
-            // Play audio and BLOCK until completely finished
+            // Play audio and wait for it to end
             if (step.audio) {
-              await new Promise(resolve => {
-                try {
-                  const bytes = atob(step.audio);
-                  const arr = new Uint8Array(bytes.length);
-                  for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-                  const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
-                  const audioUrl = URL.createObjectURL(audioBlob);
-                  const audio = new Audio();
-                  let resolved = false;
-                  const finish = () => { if (!resolved) { resolved = true; URL.revokeObjectURL(audioUrl); resolve(); } };
+              const bytes = atob(step.audio);
+              const arr = new Uint8Array(bytes.length);
+              for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
+              const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
+              const audioUrl = URL.createObjectURL(audioBlob);
+              const audio = new Audio(audioUrl);
 
-                  // Set up ALL end conditions before loading
-                  audio.addEventListener('ended', finish, { once: true });
-                  audio.addEventListener('error', finish, { once: true });
+              // Wait until audio ends
+              try {
+                await audio.play();
+                // Now wait for the ended event
+                await new Promise(r => { audio.onended = r; });
+              } catch {}
 
-                  // Safety timeout based on audio duration (fallback 15s)
-                  audio.addEventListener('loadedmetadata', () => {
-                    const safeDuration = (audio.duration + 2) * 1000;
-                    setTimeout(finish, safeDuration);
-                  }, { once: true });
-
-                  // Absolute safety net
-                  setTimeout(finish, 20000);
-
-                  // Load then play
-                  audio.src = audioUrl;
-                  audio.load();
-                  audio.addEventListener('canplaythrough', () => {
-                    audio.play().catch(finish);
-                  }, { once: true });
-                } catch { resolve(); }
-              });
+              URL.revokeObjectURL(audioUrl);
+              // Pause after audio finishes
+              await new Promise(r => setTimeout(r, 1500));
+            } else {
+              // No audio, just wait the delay
+              await new Promise(r => setTimeout(r, (step.delay || 4) * 1000));
             }
-
-            // Brief pause between steps
-            await new Promise(r => setTimeout(r, 1000));
 
             // Next step
             await playStep(i + 1);
