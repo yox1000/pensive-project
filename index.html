@@ -1415,17 +1415,46 @@
         }
 
         window.highlightARStructure = function(name) {
+          const lower = name.toLowerCase().replace(/_/g, ' ');
+          // Same keyword map as main viewer
+          const kwMap = {
+            'frontal_lobe': 'frontal', 'parietal_lobe': 'parietal',
+            'temporal_lobe': 'temporal', 'occipital_lobe': 'occipital',
+            'cerebellum': 'cerebellum', 'brainstem': 'brainstem|medulla',
+            'thalamus': 'thalamus', 'caudate_nucleus': 'deep_gray',
+            'lentiform_nucleus': 'deep_gray', 'ventricle': 'ventricle',
+            'insular_cortex': 'insul', 'internal_capsule': 'deep_gray',
+            'subarachnoid_space': 'csf', 'venous_sinuses': 'csf',
+            'septum_pellucidum': 'ventricle', 'spinal_cord': 'brainstem|medulla',
+            'quadriceps': 'rectus_femoris|vastus', 'hamstrings': 'biceps_femoris|semimembranosus|semitendinosus',
+            'adductors': 'adductor|gracilis', 'calf_muscles': 'gastrocnemius|soleus',
+            'lung_upper_lobe_left': 'left_upper', 'lung_lower_lobe_left': 'left_lower',
+            'lung_upper_lobe_right': 'right_upper', 'lung_middle_lobe_right': 'right_middle',
+            'lung_lower_lobe_right': 'right_lower',
+          };
+          const keywords = (kwMap[name] || kwMap[lower] || lower).split('|');
+          const isAll = (name === 'brain' || name === 'skull');
+
           arModel.traverse(child => {
             if (child.isMesh) {
-              if (child.name === name) {
+              const cn = (child.name || '').toLowerCase();
+              const isMatch = isAll || child.name === name || keywords.some(kw => cn.includes(kw));
+              if (!child._arMatCloned) {
+                child.material = child.material.clone();
+                child.material.transparent = true;
+                child.material.side = THREE.DoubleSide;
+                child._arMatCloned = true;
+              }
+              if (isMatch) {
                 child.material.opacity = 1.0;
                 child.material.emissive = new THREE.Color(0x3388ff);
-                child.material.emissiveIntensity = 0.4;
+                child.material.emissiveIntensity = 0.5;
               } else {
-                child.material.opacity = 0.4;
+                child.material.opacity = 0.1;
                 child.material.emissive = new THREE.Color(0x000000);
                 child.material.emissiveIntensity = 0;
               }
+              child.material.needsUpdate = true;
             }
           });
         }
@@ -1615,17 +1644,17 @@
       if (structure) highlightARStructure(structure);
     } else if (action === 'highlight_status') {
       if (structure) {
-        const s = structuresData?.structures?.find(st => st.name === structure);
-        const status = s?.status || '';
-        // Color green if normal, red if abnormal
+        // Highlight the structure first
+        highlightARStructure(structure);
+        // Then recolor based on health status
+        const s = structuresData?.structures?.find(st => st.name === structure || st.name === structure.toLowerCase());
+        const healthStatus = s?.status || 'detected';
+        const color = healthStatus.includes('normal') ? 0x00ff44 : 0xff4422;
         window._arModel.traverse(child => {
-          if (child.isMesh) {
-            const isMatch = child.name === structure || child.name.toLowerCase().includes(structure.toLowerCase());
-            child.material.opacity = isMatch ? 1.0 : 0.2;
-            if (isMatch) {
-              child.material.emissive = new THREE.Color(status.includes('normal') ? 0x00ff44 : 0xff2200);
-              child.material.emissiveIntensity = 0.5;
-            }
+          if (child.isMesh && child.material.opacity > 0.5) {
+            child.material.emissive = new THREE.Color(color);
+            child.material.emissiveIntensity = 0.6;
+            child.material.needsUpdate = true;
           }
         });
       }
