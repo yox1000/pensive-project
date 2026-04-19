@@ -46,8 +46,9 @@ When the user asks for a walkthrough/tour/overview, return a walkthrough with on
 - {"type": "show_deep"} — Toggle deep structures on
 - {"type": "isolate", "target": "<name>"} — Show ONLY this structure
 - {"type": "compare", "targets": ["a", "b"]} — Compare two structures
-- {"type": "rotate", "speed": 0.02} — Auto-rotate
-- {"type": "stop_rotate"} — Stop rotation
+- {"type": "rotate_to", "target": "<structure_name>"} — Smoothly rotate model to show this structure facing the camera
+- {"type": "rotate_slow"} — Slow cinematic spin (overview only)
+- {"type": "stop_rotate"} — Stop cinematic spin
 
 ## Structure Names (use these exact names in actions)
 Brain: brain, skull, frontal_lobe, parietal_lobe, temporal_lobe, occipital_lobe, cerebellum, brainstem, thalamus, caudate_nucleus, lentiform_nucleus, ventricle, insular_cortex, internal_capsule, subarachnoid_space, venous_sinuses, septum_pellucidum, central_sulcus, spinal_cord
@@ -60,8 +61,9 @@ When explaining structures, USE MULTIPLE ACTIONS per step to create the best vie
 - After showing deep structures: add {"type": "show_deep"} to restore the full view
 - When showing a single small structure: use {"type": "isolate", "target": "name"} for clarity, then {"type": "show_all"} after
 - When comparing: use {"type": "compare", "targets": ["a", "b"]}
-- When you highlight a structure, the model automatically rotates to face it toward the camera — no need to add a rotate action
-- For overview steps only: use {"type": "rotate", "speed": 0.008} for slow cinematic spin, then {"type": "stop_rotate"} before highlighting individual structures
+- When you highlight or isolate a structure, the model automatically rotates to face it toward the camera
+- For overview/intro steps only: use {"type": "rotate_slow"} for a gentle cinematic spin, then {"type": "stop_rotate"} before highlighting
+- To show a specific angle without highlighting: use {"type": "rotate_to", "target": "structure_name"}
 - Use highlight_group to show related structures together (e.g. all lobes at once, all deep structures)
 
 ## Guidelines

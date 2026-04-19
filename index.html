@@ -1801,12 +1801,27 @@
           if (act.target) {
             const isoKw = (GLOBAL_KW_MAP[act.target] || GLOBAL_KW_MAP[act.target.toLowerCase()] || act.target.toLowerCase()).split('|');
             const isAll = act.target === 'brain' || act.target === 'skull';
+            const isoColor = STRUCTURE_COLORS[act.target] || STRUCTURE_COLORS[act.target?.toLowerCase()] || 0x3388ff;
             model.traverse(child => {
               if (child.isMesh) {
                 const cn = (child.name || '').toLowerCase();
-                child.visible = isAll || isoKw.some(k => cn.includes(k));
+                const match = isAll || isoKw.some(k => cn.includes(k));
+                child.visible = match;
+                if (match) {
+                  if (!child._matCloned && !child._arMatCloned) {
+                    child.material = child.material.clone();
+                    child.material.transparent = true;
+                    child.material.side = THREE.DoubleSide;
+                    child._matCloned = true;
+                  }
+                  child.material.opacity = 1.0;
+                  child.material.emissive = new THREE.Color(isoColor);
+                  child.material.emissiveIntensity = 0.4;
+                  child.material.needsUpdate = true;
+                }
               }
             });
+            faceStructure(act.target);
           }
           break;
 
@@ -1816,12 +1831,16 @@
           }
           break;
 
+        case 'rotate_to':
+          if (act.target) faceStructure(act.target);
+          break;
+
         case 'rotate':
+        case 'rotate_slow':
           if (window._agentRotate) clearInterval(window._agentRotate);
-          const rotSpeed = act.speed || 0.01;
           const rotModel = window._arModel || window._medlensModel;
           if (rotModel) {
-            window._agentRotate = setInterval(() => { rotModel.rotation.y += rotSpeed; }, 16);
+            window._agentRotate = setInterval(() => { rotModel.rotation.y += 0.005; }, 16);
           }
           break;
 
