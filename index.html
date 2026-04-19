@@ -1712,7 +1712,18 @@
       _arRecognition.lang = 'en-US';
       _arRecognition.interimResults = false;
       _arRecognition.onresult = (e) => { _arRecognition = null; processVoiceQuestion(e.results[0][0].transcript); };
-      _arRecognition.onerror = (e) => { console.error('[VOICE] SpeechRecognition error:', e.error, e); _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; status.textContent = 'Mic error: ' + (e.error || 'unknown') + '. Try Chrome or type instead.'; };
+      _arRecognition.onerror = (e) => {
+        console.error('[VOICE] SpeechRecognition error:', e.error);
+        _arRecognition = null;
+        btn.textContent = '🎙 Ask';
+        btn.style.background = 'rgba(80,180,255,0.2)';
+        if (e.error === 'network' || e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          // Brave/Firefox blocks Google speech - fall back to text input
+          const question = prompt('Voice unavailable in this browser. Type your question:');
+          if (question && question.trim()) { processVoiceQuestion(question.trim()); return; }
+        }
+        status.textContent = 'Mic error: ' + (e.error || 'unknown');
+      };
       _arRecognition.onend = () => { if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; } };
       _arRecognition.start();
     } else {
