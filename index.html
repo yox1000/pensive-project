@@ -1824,7 +1824,6 @@
 
             // Play audio and BLOCK until completely finished
             if (step.audio) {
-              let audioFinished = false;
               await new Promise(resolve => {
                 try {
                   const bytes = atob(step.audio);
@@ -1832,19 +1831,35 @@
                   for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
                   const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
                   const audioUrl = URL.createObjectURL(audioBlob);
-                  const audio = new Audio(audioUrl);
-                  const done = () => { if (!audioFinished) { audioFinished = true; URL.revokeObjectURL(audioUrl); resolve(); } };
-                  audio.onended = done;
-                  audio.onerror = done;
-                  audio.play().then(() => {
-                    // Audio started playing - wait for onended, don't resolve here
-                  }).catch(done);
+                  const audio = new Audio();
+                  let resolved = false;
+                  const finish = () => { if (!resolved) { resolved = true; URL.revokeObjectURL(audioUrl); resolve(); } };
+
+                  // Set up ALL end conditions before loading
+                  audio.addEventListener('ended', finish, { once: true });
+                  audio.addEventListener('error', finish, { once: true });
+
+                  // Safety timeout based on audio duration (fallback 15s)
+                  audio.addEventListener('loadedmetadata', () => {
+                    const safeDuration = (audio.duration + 2) * 1000;
+                    setTimeout(finish, safeDuration);
+                  }, { once: true });
+
+                  // Absolute safety net
+                  setTimeout(finish, 20000);
+
+                  // Load then play
+                  audio.src = audioUrl;
+                  audio.load();
+                  audio.addEventListener('canplaythrough', () => {
+                    audio.play().catch(finish);
+                  }, { once: true });
                 } catch { resolve(); }
               });
             }
 
-            // Extra pause between steps (only after audio done)
-            await new Promise(r => setTimeout(r, 1500));
+            // Brief pause between steps
+            await new Promise(r => setTimeout(r, 1000));
 
             // Next step
             await playStep(i + 1);
