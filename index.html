@@ -1716,31 +1716,16 @@
       _arRecognition.onend = () => { if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; } };
       _arRecognition.start();
     } else {
-      // Firefox: record audio, send to Whisper API
-      (async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const recorder = new MediaRecorder(stream);
-          const chunks = [];
-          recorder.ondataavailable = e => chunks.push(e.data);
-          recorder.onstop = async () => {
-            stream.getTracks().forEach(t => t.stop());
-            status.textContent = '⏳ Transcribing...';
-            try {
-              const blob = new Blob(chunks, { type: 'audio/webm' });
-              const fd = new FormData();
-              fd.append('audio', blob, 'recording.webm');
-              const res = await fetch('/api/whisper', { method: 'POST', body: fd });
-              if (!res.ok) throw new Error('Transcription failed');
-              const { text } = await res.json();
-              processVoiceQuestion(text);
-            } catch (err) { status.textContent = 'Error: ' + err.message; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; }
-          };
-          recorder.start();
-          _arRecognition = { stop: () => recorder.stop() };
-          setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 8000);
-        } catch (err) { status.textContent = 'Mic access denied.'; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; }
-      })();
+      // Firefox fallback: show text input
+      btn.textContent = '🎙 Ask';
+      btn.style.background = 'rgba(80,180,255,0.2)';
+      const question = prompt('Type your question about the scan:');
+      if (question && question.trim()) {
+        processVoiceQuestion(question.trim());
+      } else {
+        status.textContent = '';
+        status.style.display = 'none';
+      }
     }
   };
 
