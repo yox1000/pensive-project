@@ -1822,8 +1822,9 @@
             // Wait a moment for the visual to settle
             await new Promise(r => setTimeout(r, 500));
 
-            // Play audio and wait for it to finish completely
+            // Play audio and BLOCK until completely finished
             if (step.audio) {
+              let audioFinished = false;
               await new Promise(resolve => {
                 try {
                   const bytes = atob(step.audio);
@@ -1832,16 +1833,18 @@
                   const audioBlob = new Blob([arr], { type: 'audio/mpeg' });
                   const audioUrl = URL.createObjectURL(audioBlob);
                   const audio = new Audio(audioUrl);
-                  audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); };
-                  audio.onerror = () => { URL.revokeObjectURL(audioUrl); resolve(); };
-                  const playPromise = audio.play();
-                  if (playPromise) playPromise.catch(() => resolve());
+                  const done = () => { if (!audioFinished) { audioFinished = true; URL.revokeObjectURL(audioUrl); resolve(); } };
+                  audio.onended = done;
+                  audio.onerror = done;
+                  audio.play().then(() => {
+                    // Audio started playing - wait for onended, don't resolve here
+                  }).catch(done);
                 } catch { resolve(); }
               });
             }
 
-            // Pause between steps
-            await new Promise(r => setTimeout(r, (step.delay || 2) * 1000));
+            // Extra pause between steps (only after audio done)
+            await new Promise(r => setTimeout(r, 1500));
 
             // Next step
             await playStep(i + 1);
