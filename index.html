@@ -1681,7 +1681,7 @@
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      status.textContent = 'Speech recognition not supported in this browser.';
+      status.textContent = 'Voice requires Chrome or Edge browser.';
       status.style.display = 'block';
       return;
     }
