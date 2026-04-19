@@ -94,7 +94,7 @@ async function runAgent(question, scanContext, structureNames, conversationHisto
         model: 'deepseek-chat',
         messages,
         temperature: 0.3,
-        max_tokens: 500,
+        max_tokens: 4000,
       }),
     });
     if (!res.ok) throw new Error('DeepSeek failed');
@@ -133,6 +133,13 @@ async function runAgent(question, scanContext, structureNames, conversationHisto
     const match = raw.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
+
+      // Check if it's a walkthrough response
+      if (parsed.walkthrough && Array.isArray(parsed.walkthrough)) {
+        return { walkthrough: parsed.walkthrough };
+      }
+
+      // Single response
       return {
         speech: parsed.speech || 'I analyzed your scan.',
         actions: Array.isArray(parsed.actions) ? parsed.actions : [],
