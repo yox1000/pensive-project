@@ -1712,7 +1712,7 @@
       _arRecognition.lang = 'en-US';
       _arRecognition.interimResults = false;
       _arRecognition.onresult = (e) => { _arRecognition = null; processVoiceQuestion(e.results[0][0].transcript); };
-      _arRecognition.onerror = () => { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; status.textContent = 'Mic error. Try again.'; };
+      _arRecognition.onerror = (e) => { console.error('[VOICE] SpeechRecognition error:', e.error, e); _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; status.textContent = 'Mic error: ' + (e.error || 'unknown') + '. Try Chrome or type instead.'; };
       _arRecognition.onend = () => { if (_arRecognition) { _arRecognition = null; btn.textContent = '🎙 Ask'; btn.style.background = 'rgba(80,180,255,0.2)'; } };
       _arRecognition.start();
     } else {
