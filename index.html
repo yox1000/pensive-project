@@ -348,7 +348,7 @@
         if (child.isMesh) {
           child.material = child.material.clone();
           child.material.transparent = true;
-          child.material.opacity = 0.6;
+          child.material.opacity = 1.0;
           child.material.side = THREE.DoubleSide;
         }
       });
@@ -567,7 +567,7 @@
       model.traverse(child => {
         if (child.isMesh) {
           child.material.transparent = true;
-          child.material.opacity = 0.7;
+          child.material.opacity = 1.0;
           child.material.side = THREE.DoubleSide;
         }
       });
@@ -758,7 +758,7 @@
     if (matchCount === 0) {
       window._medlensModel.traverse(child => {
         if (child.isMesh && child._matCloned) {
-          child.material.opacity = 0.7;
+          child.material.opacity = 1.0;
           child.material.emissive = new THREE.Color(0x000000);
           child.material.emissiveIntensity = 0;
           child.material.needsUpdate = true;
@@ -776,7 +776,7 @@
       resetBtn.onclick = () => {
         window._medlensModel.traverse(child => {
           if (child.isMesh && child._matCloned) {
-            child.material.opacity = 0.7;
+            child.material.opacity = 1.0;
             child.material.emissive = new THREE.Color(0x000000);
             child.material.emissiveIntensity = 0;
             child.material.needsUpdate = true;
@@ -1295,7 +1295,7 @@
       if (child.isMesh) {
         child.material = child.material.clone();
         child.material.transparent = true;
-        child.material.opacity = 0.85;
+        child.material.opacity = 1.0;
         child.material.side = THREE.DoubleSide;
         child.material.depthWrite = false;
       }
@@ -1546,7 +1546,7 @@
         function resetARHighlight() {
           arModel.traverse(child => {
             if (child.isMesh) {
-              child.material.opacity = 0.85;
+              child.material.opacity = 1.0;
               child.material.emissive = new THREE.Color(0x000000);
               child.material.emissiveIntensity = 0;
             }
@@ -1780,7 +1780,7 @@
             if (child.isMesh) {
               child.visible = true;
               if (child._arMatCloned || child._matCloned) {
-                child.material.opacity = 0.7;
+                child.material.opacity = 1.0;
                 child.material.emissive = new THREE.Color(0x000000);
                 child.material.emissiveIntensity = 0;
                 child.material.needsUpdate = true;
