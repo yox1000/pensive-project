@@ -1,0 +1,38 @@
+name: Deploy to HuggingFace Spaces
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+
+      - name: Clone HF Space repo
+        run: |
+          GIT_LFS_SKIP_SMUDGE=1 git clone \
+            https://DanielBrMz:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/DanielBrMz/graphfol \
+            hf-space
+
+      - name: Sync files to HF Space
+        run: |
+          cp server.js agent.js index.html package.json package-lock.json hf-space/frontend/
+          mkdir -p hf-space/frontend/elevenlabs
+          cp elevenlabs/* hf-space/frontend/elevenlabs/
+
+      - name: Push to HF Spaces
+        run: |
+          cd hf-space
+          git config user.email "a01254805@tec.mx"
+          git config user.name "DanielBrMz"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "deploy: sync from GitHub ${GITHUB_SHA::7}"
+            git push
+            echo "Deployed to https://app.graphfol.health"
+          fi
